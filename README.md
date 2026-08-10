@@ -6,7 +6,7 @@ parameters for the observer location, defaulting to Paris (a public, non-identif
 location) when omitted — pass the actual broadcast site's coordinates via the URL. Local
 circumstances (contact times, obscuration %, sun position) are computed with the
 [cosinekitty/astronomy](https://github.com/cosinekitty/astronomy) library (MIT), loaded
-from `astronomy.min.js`, with hardcoded fallback timings if the live computation throws.
+from `astronomy.browser.min.js`, with hardcoded fallback timings if the live computation throws.
 
 ## Files
 
@@ -14,12 +14,20 @@ from `astronomy.min.js`, with hardcoded fallback timings if the live computation
 |---|---|
 | `eclipse-widget.html` | Compact status bar widget. Supports a demo/preview mode, no OBS or Companion integration. |
 | `eclipse-widget-broadcast.html` | Full broadcast overlay (lower-third + fullscreen scene) with live obs-websocket control and Bitfocus Companion feedback. |
-| `astronomy.min.js` | Shared Astronomy Engine library (MIT), loaded by both widgets via `<script src>`. |
+| `astronomy.browser.min.js` | Shared Astronomy Engine library (MIT), loaded by both widgets via `<script src>`. |
 
 Both widgets are meant to be added as an OBS **Browser Source** (transparent background).
-Since `astronomy.min.js` is now a separate file, keep it alongside the widget HTML file(s)
-— e.g. deploy the whole folder, or if hosting via URL, serve all three files from the same
-directory.
+Since `astronomy.browser.min.js` is now a separate file, keep it alongside the widget HTML
+file(s) — e.g. deploy the whole folder, or if hosting via URL, serve all three files from the
+same directory.
+
+> **Updating the library:** take `astronomy.browser.min.js` from
+> [`source/js/`](https://github.com/cosinekitty/astronomy/tree/master/source/js) upstream —
+> **not** `astronomy.min.js`, which is the Node/CommonJS build. The CommonJS build assigns to
+> a bare `exports` object, so loading it through a `<script>` tag fails immediately with
+> `Uncaught ReferenceError: exports is not defined`, and the widgets then die on
+> `Astronomy is not defined`. Keeping the upstream filename makes it obvious which build this
+> is.
 
 ## `eclipse-widget.html` — query parameters
 
@@ -109,5 +117,5 @@ Variables are only pushed when their value changes.
 ## License
 
 Both widgets load the [Astronomy Engine](https://github.com/cosinekitty/astronomy)
-JavaScript library, MIT-licensed, © 2019–2023 Don Cross, from `astronomy.min.js`. See the
+JavaScript library, MIT-licensed, © 2019–2023 Don Cross, from `astronomy.browser.min.js`. See the
 license header inside that file.

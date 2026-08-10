@@ -482,6 +482,36 @@
       switchView(function () { bar.classList.toggle('noreal'); });
     }
   });
+
+  /* ===== Companion feedback: push widget state into Companion custom
+     variables over its HTTP API. Enable with ?companion=HOST[:PORT]
+     (port defaults to 8000, Companion's web/API port). Create these
+     custom variables in Companion once; the widget then updates them live
+     for button feedbacks and key text ($(custom:eclipse_countdown), …):
+       eclipse_view         fullscreen | lower
+       eclipse_real         on | off        (true-scale inset card)
+       eclipse_visible      on | off        (bar shown on air)
+       eclipse_phase        attente | en_cours | max_passe |
+                            sous_horizon | terminee
+       eclipse_countdown    e.g. 00:13:41 or 2d 05h 42m
+       eclipse_obscuration  0.0 – 100.0 */
+  var COMP = q.get('companion');
+  if (COMP && COMP.indexOf(':') < 0) COMP += ':8000';
+  var compLast = {};
+  window.eclipseFeedback = function (name, value) {
+    if (!COMP || compLast[name] === value) return;
+    compLast[name] = value;
+    fetch('http://' + COMP + '/api/custom-variable/eclipse_' + name +
+          '/value?value=' + encodeURIComponent(value),
+          { method: 'POST', mode: 'no-cors' }).catch(function () {});
+  };
+  function pushViewState() {
+    eclipseFeedback('view', bar.classList.contains('fs') ? 'fullscreen' : 'lower');
+    eclipseFeedback('real', bar.classList.contains('noreal') ? 'off' : 'on');
+    eclipseFeedback('visible', bar.classList.contains('on') ? 'on' : 'off');
+  }
+  new MutationObserver(pushViewState).observe(bar, { attributes: true, attributeFilter: ['class'] });
+  pushViewState();
   function b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
   function sha256b64(str) {
     return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(b64);
@@ -1179,6 +1209,7 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
 
     // Live percentage
     elPct.textContent = (ob * 100).toFixed(1).replace('.', ',') + '%';
+    if (window.eclipseFeedback) eclipseFeedback('obscuration', (ob * 100).toFixed(1));
 
     // Sun position
     var alt = g.sHz.altitude, az = g.sHz.azimuth;
@@ -1217,26 +1248,30 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
     var t = now();
     elClock.textContent = fmtT(t) + (DEMO ? '  [DEMO ×' + DEMO_SPEED + ']' : '');
 
-    var status, label, target;
+    var status, label, target, phase;
     if (t < tC1) {
-      status = 'L\'ÉCLIPSE COMMENCE BIENTÔT';
+      status = 'L\'ÉCLIPSE COMMENCE BIENTÔT'; phase = 'attente';
       label = 'PREMIER CONTACT DANS'; target = tC1;
     } else if (t < tPeak) {
-      status = 'ÉCLIPSE EN COURS';
+      status = 'ÉCLIPSE EN COURS'; phase = 'en_cours';
       label = 'MAXIMUM (' + (peakObsc * 100).toFixed(1).replace('.', ',') + '%) DANS'; target = tPeak;
     } else if (t < tSunset) {
-      status = 'MAXIMUM PASSÉ';
+      status = 'MAXIMUM PASSÉ'; phase = 'max_passe';
       label = 'COUCHER DU SOLEIL DANS'; target = tSunset;
     } else if (t < tC4) {
-      status = 'SOLEIL COUCHÉ · ÉCLIPSE ENCORE EN COURS';
+      status = 'SOLEIL COUCHÉ · ÉCLIPSE ENCORE EN COURS'; phase = 'sous_horizon';
       label = 'FIN DE L\'ÉCLIPSE (SOUS L\'HORIZON) DANS'; target = tC4;
     } else {
-      status = 'L\'ÉCLIPSE EST TERMINÉE';
+      status = 'L\'ÉCLIPSE EST TERMINÉE'; phase = 'terminee';
       label = 'MERCI D\'AVOIR SUIVI'; target = null;
     }
     elStatus.textContent = status;
     elCdLbl.textContent = label;
     elCd.textContent = target ? fmtCountdown(target - t) : '--:--:--';
+    if (window.eclipseFeedback) {
+      eclipseFeedback('phase', phase);
+      eclipseFeedback('countdown', elCd.textContent);
+    }
 
     // Timeline progress
     var p = (t - tC1) / (tC4 - tC1);

@@ -241,6 +241,7 @@
     flex-direction: column;
   }
   #bar.fs #realview { display: flex; animation: kFadeUp 0.5s ease-out 0.5s backwards; }
+  #bar.fs.noreal #realview { display: none; }
   #rvhead {
     display: flex; align-items: baseline; justify-content: space-between;
     padding: 10px 14px 4px; color: #fff;
@@ -463,19 +464,24 @@
   var _origPlayIn = playIn;
   playIn = function () { bar.classList.remove('off'); _origPlayIn(); };
 
-  /* ===== obs-websocket client: lets Companion trigger the out animation.
+  /* ===== obs-websocket client: lets Companion drive the widget.
      Browser source URL params: ?obspw=PASSWORD (&obsport=4455)
-     Companion sends: BroadcastCustomEvent {"eventData":{"eclipseLowerThird":"hide"}} */
+     Companion sends: BroadcastCustomEvent {"eventData":{"eclipseLowerThird":"<cmd>"}}
+     Commands: hide · show · fullscreen · lower · toggleView
+               showReal · hideReal · toggleReal (true-scale inset card) */
   var q = new URLSearchParams(location.search);
   var OBS_PW = q.get('obspw') || '';
   var OBS_PORT = q.get('obsport') || '4455';
   /* ?fs — start directly in the fullscreen layout (dedicated browser source)
-     ?noreal — hide the true-scale inset card */
+     ?noreal — start with the true-scale inset card hidden (still toggleable) */
   if (q.has('fs')) bar.classList.add('fs');
-  if (q.has('noreal')) {
-    var rvCard = document.getElementById('realview');
-    if (rvCard) rvCard.style.display = 'none';
-  }
+  if (q.has('noreal')) bar.classList.add('noreal');
+  /* Preview shortcut (and OBS "Interact"): R toggles the true-scale card */
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'r' || e.key === 'R') {
+      switchView(function () { bar.classList.toggle('noreal'); });
+    }
+  });
   function b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
   function sha256b64(str) {
     return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(b64);
@@ -510,6 +516,16 @@
         }
         if (d.eclipseLowerThird === 'toggleView') {
           switchView(function () { bar.classList.toggle('fs'); });
+        }
+        /* True-scale inset card on/off (fullscreen only) */
+        if (d.eclipseLowerThird === 'showReal') {
+          switchView(function () { bar.classList.remove('noreal'); });
+        }
+        if (d.eclipseLowerThird === 'hideReal') {
+          switchView(function () { bar.classList.add('noreal'); });
+        }
+        if (d.eclipseLowerThird === 'toggleReal') {
+          switchView(function () { bar.classList.toggle('noreal'); });
         }
       }
     };

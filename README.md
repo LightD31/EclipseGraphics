@@ -5,8 +5,8 @@ in **Thonac, Dordogne** (`Europe/Paris`). Both widgets take `lat`/`lon`/`alt` qu
 parameters for the observer location, defaulting to Paris (a public, non-identifying
 location) when omitted — pass the actual broadcast site's coordinates via the URL. Local
 circumstances (contact times, obscuration %, sun position) are computed with the
-[cosinekitty/astronomy](https://github.com/cosinekitty/astronomy) library (MIT), bundled
-inline in each file, with hardcoded fallback timings if the live computation throws.
+[cosinekitty/astronomy](https://github.com/cosinekitty/astronomy) library (MIT), loaded
+from `astronomy.min.js`, with hardcoded fallback timings if the live computation throws.
 
 ## Files
 
@@ -14,9 +14,12 @@ inline in each file, with hardcoded fallback timings if the live computation thr
 |---|---|
 | `eclipse-widget.html` | Compact status bar widget. Supports a demo/preview mode, no OBS or Companion integration. |
 | `eclipse-widget-broadcast.html` | Full broadcast overlay (lower-third + fullscreen scene) with live obs-websocket control and Bitfocus Companion feedback. |
+| `astronomy.min.js` | Shared Astronomy Engine library (MIT), loaded by both widgets via `<script src>`. |
 
-Both are static, self-contained HTML files meant to be added as an OBS **Browser Source**
-(transparent background).
+Both widgets are meant to be added as an OBS **Browser Source** (transparent background).
+Since `astronomy.min.js` is now a separate file, keep it alongside the widget HTML file(s)
+— e.g. deploy the whole folder, or if hosting via URL, serve all three files from the same
+directory.
 
 ## `eclipse-widget.html` — query parameters
 
@@ -104,6 +107,6 @@ Variables are only pushed when their value changes.
 
 ## License
 
-Both files bundle the [Astronomy Engine](https://github.com/cosinekitty/astronomy)
-JavaScript library, MIT-licensed, © 2019–2023 Don Cross. See the license header inside
-each HTML file.
+Both widgets load the [Astronomy Engine](https://github.com/cosinekitty/astronomy)
+JavaScript library, MIT-licensed, © 2019–2023 Don Cross, from `astronomy.min.js`. See the
+license header inside that file.

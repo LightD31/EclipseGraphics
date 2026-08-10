@@ -231,6 +231,29 @@
     margin-left: -2.5vw; margin-top: -2.5vw;
   }
 
+  /* True-scale inset (bottom-left card): Sun & Moon at their real apparent
+     size; the camera auto-zooms to keep both in frame (hide with ?noreal) */
+  #realview {
+    display: none; position: absolute;
+    left: 0; bottom: 94px; width: 21vw;
+    background: rgba(8,12,36,0.88);
+    border: 1px solid rgba(255,255,255,0.22);
+    flex-direction: column;
+  }
+  #bar.fs #realview { display: flex; animation: kFadeUp 0.5s ease-out 0.5s backwards; }
+  #rvhead {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 10px 14px 4px; color: #fff;
+  }
+  #rvhead b { font-size: 17px; font-weight: 900; letter-spacing: 0.5px; }
+  #rvhead span { font-size: 15px; color: rgba(255,255,255,0.65); font-variant-numeric: tabular-nums; }
+  #rvsvg { display: block; width: 100%; height: 21vw; }
+  /* cx/cy/r/y are CSS geometry properties in Chromium: 1s linear matches the
+     once-per-second updates for a continuous glide/zoom */
+  #rvsvg circle, #rvsvg rect {
+    transition: cx 1s linear, cy 1s linear, r 1s linear, y 1s linear, height 1s linear;
+  }
+
   /* White strap: top-right corner */
   #bar.fs .rv-strap { position: absolute; top: 0; right: 0; width: auto; max-width: none; }
   #bar.fs #strap { height: 64px; padding: 0 44px; gap: 18px; }
@@ -295,6 +318,33 @@
           </radialGradient>
         </defs>
         <circle id="moondisc" cx="0" cy="0" r="63.9" fill="url(#moonGrad)" stroke="rgba(255,255,255,0.4)" stroke-width="1.2"/>
+      </svg>
+    </div>
+    <div id="realview" aria-hidden="true">
+      <div id="rvhead"><b>TAILLE RÉELLE</b><span id="rvfov">–</span></div>
+      <svg id="rvsvg" viewBox="0 0 500 500" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <radialGradient id="rvSunGrad">
+            <stop offset="0%" stop-color="#ffdf6b"/>
+            <stop offset="70%" stop-color="#ffb62e"/>
+            <stop offset="100%" stop-color="#f59300"/>
+          </radialGradient>
+          <radialGradient id="rvGlowGrad">
+            <stop offset="0%" stop-color="rgba(255,255,255,0.5)"/>
+            <stop offset="55%" stop-color="rgba(200,215,255,0.18)"/>
+            <stop offset="100%" stop-color="rgba(200,215,255,0)"/>
+          </radialGradient>
+          <radialGradient id="rvMoonGrad">
+            <stop offset="0%" stop-color="#242e58"/>
+            <stop offset="78%" stop-color="#1b2349"/>
+            <stop offset="100%" stop-color="#161c3e"/>
+          </radialGradient>
+        </defs>
+        <circle id="rvglow" cx="250" cy="250" r="0" fill="url(#rvGlowGrad)" opacity="0"/>
+        <circle id="rvsun" cx="250" cy="250" r="0" fill="url(#rvSunGrad)"/>
+        <circle id="rvmoon" cx="250" cy="250" r="0" fill="url(#rvMoonGrad)" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+        <rect id="rvground" x="0" y="600" width="500" height="500" fill="#0a0f26" opacity="0.92"/>
+        <rect id="rvhor" x="0" y="600" width="500" height="2.5" fill="#fff"/>
       </svg>
     </div>
   </div>
@@ -387,8 +437,13 @@
   var q = new URLSearchParams(location.search);
   var OBS_PW = q.get('obspw') || '';
   var OBS_PORT = q.get('obsport') || '4455';
-  /* ?fs — start directly in the fullscreen layout (dedicated browser source) */
+  /* ?fs — start directly in the fullscreen layout (dedicated browser source)
+     ?noreal — hide the true-scale inset card */
   if (q.has('fs')) bar.classList.add('fs');
+  if (q.has('noreal')) {
+    var rvCard = document.getElementById('realview');
+    if (rvCard) rvCard.style.display = 'none';
+  }
   function b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
   function sha256b64(str) {
     return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(b64);
@@ -970,9 +1025,49 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
       setTimeout(function () { svg.innerHTML = html; svg.style.opacity = 1; }, 320);
     }
 
-    return function (t, g) {
+    var rvSun = $('rvsun'), rvMoon = $('rvmoon'), rvGlow = $('rvglow'),
+        rvGround = $('rvground'), rvHor = $('rvhor'), rvFov = $('rvfov');
+
+    // True-scale inset: real apparent sizes, camera centered between the two
+    // bodies, field of view auto-zoomed to keep both in frame.
+    function updateRealView(g, ob) {
+      if (!rvSun || !rvMoon) return;
+      var degPerRad = 180 / Math.PI;
+      var rS = g.rSun * degPerRad, rM = g.rMoon * degPerRad;
+      var sep = g.sep * degPerRad;
+      var fov = Math.max(1.7, (sep + 2 * rS) * 1.35);
+      var s = 500 / fov;
+      var dAzC = g.mHz.azimuth - g.sHz.azimuth;
+      if (dAzC > 180) dAzC -= 360; if (dAzC < -180) dAzC += 360;
+      var azC = g.sHz.azimuth + dAzC / 2;
+      var altC = (g.sHz.altitude + g.mHz.altitude) / 2;
+      var cosA = Math.cos(altC * Math.PI / 180);
+      function px(az, alt) {
+        var da = az - azC;
+        if (da > 180) da -= 360; if (da < -180) da += 360;
+        return { x: 250 + da * cosA * s, y: 250 - (alt - altC) * s };
+      }
+      var ps = px(g.sHz.azimuth, g.sHz.altitude);
+      var pm = px(g.mHz.azimuth, g.mHz.altitude);
+      rvSun.setAttribute('cx', ps.x.toFixed(1)); rvSun.setAttribute('cy', ps.y.toFixed(1));
+      rvSun.setAttribute('r', (rS * s).toFixed(1));
+      rvMoon.setAttribute('cx', pm.x.toFixed(1)); rvMoon.setAttribute('cy', pm.y.toFixed(1));
+      rvMoon.setAttribute('r', (rM * s).toFixed(1));
+      rvGlow.setAttribute('cx', ps.x.toFixed(1)); rvGlow.setAttribute('cy', ps.y.toFixed(1));
+      rvGlow.setAttribute('r', (rS * s * 2.4).toFixed(1));
+      rvGlow.setAttribute('opacity', ob > 0.85 ? ((ob - 0.85) / 0.15).toFixed(2) : 0);
+      // Real horizon: the ground slides up and occludes the discs at sunset
+      var yHor = 250 + altC * s;
+      if (yHor > 520) yHor = 620; /* far below the frame: park it */
+      rvGround.setAttribute('y', yHor.toFixed(1));
+      rvHor.setAttribute('y', (yHor - 1.25).toFixed(1));
+      if (rvFov) rvFov.textContent = 'CHAMP ' + fov.toFixed(1).replace('.', ',') + '°';
+    }
+
+    return function (t, g, ob) {
       var m = t < tz0 ? 'wide' : 'zoom';
       if (m !== mode || (m === 'wide' && dateKey.format(new Date(t)) !== builtDay)) rebuild(m, t);
+      updateRealView(g, ob || 0);
       if (!x) return;
       var sx = x(g.sHz.azimuth), sy = y(g.sHz.altitude);
       wrap.style.setProperty('--sunX', (sx / W * 100).toFixed(2) + '%');
@@ -1050,8 +1145,8 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
     elBar.style.setProperty('--deep', ob.toFixed(3));
     // Sunset dimming of the sun disc
     elSun.style.opacity = alt < 0 ? Math.max(0, 1 + alt / 1.2).toFixed(2) : 1;
-    // Fullscreen sky scene: keep the overlap disc on the Sun's trajectory
-    skyUpdate(t, g);
+    // Fullscreen sky scene: keep the discs on their trajectories
+    skyUpdate(t, g, ob);
   }
 
   function updateFast() {

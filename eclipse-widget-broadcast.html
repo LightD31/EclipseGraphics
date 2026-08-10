@@ -340,6 +340,8 @@
             <stop offset="100%" stop-color="#161c3e"/>
           </radialGradient>
         </defs>
+        <polyline id="rvsunpath" fill="none" stroke="rgba(255,210,87,0.6)" stroke-width="2.5" stroke-linejoin="round"/>
+        <polyline id="rvmoonpath" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="8 7"/>
         <circle id="rvglow" cx="250" cy="250" r="0" fill="url(#rvGlowGrad)" opacity="0"/>
         <circle id="rvsun" cx="250" cy="250" r="0" fill="url(#rvSunGrad)"/>
         <circle id="rvmoon" cx="250" cy="250" r="0" fill="url(#rvMoonGrad)" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
@@ -878,7 +880,7 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
     var tz0 = tC1 - 75 * 60000, tz1 = tC4 + 25 * 60000;
     var dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ });
     var dateKey = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ });
-    var mode = '', builtDay = '', x = null, y = null;
+    var mode = '', builtDay = '', x = null, y = null, chartPts = null;
 
     // Sampling window of the wide view: the current day, sunrise → sunset
     function wideWindow(t) {
@@ -901,6 +903,7 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
       var pts = [];
       for (var ts = ta; ts < tb; ts += step) pts.push(sunMoon(ts));
       pts.push(sunMoon(tb));
+      chartPts = pts; /* shared with the true-scale inset's trajectory lines */
 
       var azLo = Infinity, azHi = -Infinity, altLo = Infinity, altHi = -Infinity;
       pts.forEach(function (p) {
@@ -1026,7 +1029,8 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
     }
 
     var rvSun = $('rvsun'), rvMoon = $('rvmoon'), rvGlow = $('rvglow'),
-        rvGround = $('rvground'), rvHor = $('rvhor'), rvFov = $('rvfov');
+        rvGround = $('rvground'), rvHor = $('rvhor'), rvFov = $('rvfov'),
+        rvSunPath = $('rvsunpath'), rvMoonPath = $('rvmoonpath');
 
     // True-scale inset: real apparent sizes, camera centered between the two
     // bodies, field of view auto-zoomed to keep both in frame.
@@ -1049,6 +1053,19 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
       }
       var ps = px(g.sHz.azimuth, g.sHz.altitude);
       var pm = px(g.mHz.azimuth, g.mHz.altitude);
+      // Trajectory lines through the moving camera (same samples as the
+      // main chart, so both views show the same paths)
+      if (chartPts && rvSunPath && rvMoonPath) {
+        var sp = '', mp = '';
+        for (var i = 0; i < chartPts.length; i++) {
+          var a = px(chartPts[i].sHz.azimuth, chartPts[i].sHz.altitude);
+          var b = px(chartPts[i].mHz.azimuth, chartPts[i].mHz.altitude);
+          sp += a.x.toFixed(0) + ',' + a.y.toFixed(0) + ' ';
+          mp += b.x.toFixed(0) + ',' + b.y.toFixed(0) + ' ';
+        }
+        rvSunPath.setAttribute('points', sp);
+        rvMoonPath.setAttribute('points', mp);
+      }
       rvSun.setAttribute('cx', ps.x.toFixed(1)); rvSun.setAttribute('cy', ps.y.toFixed(1));
       rvSun.setAttribute('r', (rS * s).toFixed(1));
       rvMoon.setAttribute('cx', pm.x.toFixed(1)); rvMoon.setAttribute('cy', pm.y.toFixed(1));

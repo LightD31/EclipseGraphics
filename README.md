@@ -73,8 +73,8 @@ Broadcast Custom Event** action.
 | Command | Effect |
 |---|---|
 | `show` | Slide the bar on air (in whichever layout — lower-third or fullscreen — is already set). No-op if the bar is already on air. |
-| `showFullscreen` | Reveal directly into the fullscreen layout: skips the lower-third frame and the lower-third↔fullscreen morph entirely, unlike stacking `show` then `fullscreen`. No-op if the bar is already on air (use `fullscreen` to morph an already-visible lower-third into fullscreen). |
-| `showLower` | Reveal directly into the lower-third layout, mirroring `showFullscreen`. No-op if the bar is already on air (use `lower` to morph an already-visible fullscreen back to the lower-third). |
+| `showFullscreen` | Land on air in the fullscreen layout, whatever the current state. Off air, it reveals straight into fullscreen — skipping the lower-third frame and the lower-third↔fullscreen morph entirely, unlike stacking `show` then `fullscreen`. Already on air in the lower third, it morphs across like `fullscreen`. No-op if already on air in fullscreen. |
+| `showLower` | Land on air in the lower-third layout, mirroring `showFullscreen`: reveals straight into the lower third when off air, and collapses an already-visible fullscreen back down like `lower`. No-op if already on air in the lower third. |
 | `hide` | Slide the bar off air. |
 | `fullscreen` | Morph from the lower-third into the fullscreen sky scene. |
 | `lower` | Morph back from fullscreen to the lower-third. |

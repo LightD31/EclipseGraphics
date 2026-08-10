@@ -277,6 +277,26 @@
   #bar.fs #cdlabel { font-size: 26px; }
   #bar.fs #countdown { font-size: 118px; }
 
+  /* ===== Native morph between the two layouts (View Transitions API) =====
+     Matching names let the browser tween each block's box between the
+     lower third and the fullscreen scene while cross-fading its content.
+     Browsers without support simply ignore these properties (the JS falls
+     back to replaying the reveal choreography instead). */
+  #sunpanel  { view-transition-name: vt-panel; }
+  #skywrap   { view-transition-name: vt-sun; }
+  #moonwrap  { view-transition-name: vt-moon; }
+  #strap     { view-transition-name: vt-strap; }
+  #redband   { view-transition-name: vt-red; }
+  #ticker    { view-transition-name: vt-ticker; }
+  #timeline  { view-transition-name: vt-timeline; }
+  ::view-transition-group(*) {
+    animation-duration: 0.65s;
+    animation-timing-function: cubic-bezier(0.22,1,0.36,1);
+  }
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation-duration: 0.65s;
+  }
+
   /* Ticker pinned to the bottom, timeline underneath */
   #bar.fs .rv-ticker { position: absolute; left: 0; right: 0; bottom: 18px; }
   #bar.fs #ticker { height: 76px; padding-left: 44px; font-size: 23px; }
@@ -402,6 +422,17 @@
     bar.classList.remove('on');
     bar.classList.add('off');
   }
+  /* Morph between lower third and fullscreen. Modern CEF (Chromium 111+)
+     tweens each matching block natively via the View Transitions API;
+     older browsers fall back to replaying the reveal choreography. */
+  function switchView(change) {
+    if (document.startViewTransition) {
+      document.startViewTransition(change);
+    } else {
+      change();
+      playIn();
+    }
+  }
   if (window.obsstudio) {
     window.addEventListener('obsSourceVisibleChanged', function (e) {
       if (e.detail && e.detail.visible) playIn();
@@ -425,8 +456,7 @@
     });
     window.addEventListener('dblclick', function () {
       clearTimeout(clickTimer);
-      bar.classList.toggle('fs');
-      playIn(); /* the two layouts are unrelated: replay the reveal */
+      switchView(function () { bar.classList.toggle('fs'); });
     });
   }
   /* Ensure a show always clears the out state first. */
@@ -472,16 +502,14 @@
         var d = msg.d.eventData || {};
         if (d.eclipseLowerThird === 'hide') playOut();
         if (d.eclipseLowerThird === 'show') playIn();
-        /* View switches replay the reveal: fullscreen is a different layout,
-           not a morph of the lower third. */
         if (d.eclipseLowerThird === 'fullscreen' && !bar.classList.contains('fs')) {
-          bar.classList.add('fs'); playIn();
+          switchView(function () { bar.classList.add('fs'); });
         }
         if (d.eclipseLowerThird === 'lower' && bar.classList.contains('fs')) {
-          bar.classList.remove('fs'); playIn();
+          switchView(function () { bar.classList.remove('fs'); });
         }
         if (d.eclipseLowerThird === 'toggleView') {
-          bar.classList.toggle('fs'); playIn();
+          switchView(function () { bar.classList.toggle('fs'); });
         }
       }
     };

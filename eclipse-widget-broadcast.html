@@ -547,18 +547,27 @@
         /* 'on' means the bar is already revealed: skip re-running the
            entrance animation on a redundant show/showFullscreen. */
         if (d.eclipseLowerThird === 'show' && !bar.classList.contains('on')) playIn();
-        /* Reveal straight into the fullscreen layout: sets 'fs' before the
-           reveal animation runs, so it never shows the lower-third frame
-           and skips the lower-third<->fullscreen morph entirely. */
-        if (d.eclipseLowerThird === 'showFullscreen' && !bar.classList.contains('on')) {
-          bar.classList.add('fs');
-          playIn();
+        /* Reveal straight into the fullscreen layout: off air, 'fs' is set
+           before the reveal animation runs, so it never shows the lower-third
+           frame and skips the lower-third<->fullscreen morph entirely. On air
+           in the lower third, it morphs across like 'fullscreen', so one
+           button always lands on "on air, fullscreen" whatever the state. */
+        if (d.eclipseLowerThird === 'showFullscreen') {
+          if (!bar.classList.contains('on')) {
+            bar.classList.add('fs');
+            playIn();
+          } else if (!bar.classList.contains('fs')) {
+            switchView(function () { bar.classList.add('fs'); });
+          }
         }
-        /* Reveal straight into the lower-third layout: clears 'fs' before the
-           reveal animation runs, mirroring showFullscreen above. */
-        if (d.eclipseLowerThird === 'showLower' && !bar.classList.contains('on')) {
-          bar.classList.remove('fs');
-          playIn();
+        /* Same for the lower-third layout, mirroring showFullscreen above. */
+        if (d.eclipseLowerThird === 'showLower') {
+          if (!bar.classList.contains('on')) {
+            bar.classList.remove('fs');
+            playIn();
+          } else if (bar.classList.contains('fs')) {
+            switchView(function () { bar.classList.remove('fs'); });
+          }
         }
         if (d.eclipseLowerThird === 'fullscreen' && !bar.classList.contains('fs')) {
           switchView(function () { bar.classList.add('fs'); });

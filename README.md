@@ -1,7 +1,9 @@
 # EclipseGraphics
 
 Browser-source graphics for a live broadcast of the 12 August 2026 total solar eclipse
-in **Thonac, Dordogne** (lat 45.02262, lon 1.11732, elev 180 m, `Europe/Paris`). Local
+in **Thonac, Dordogne** (`Europe/Paris`). Both widgets take `lat`/`lon`/`alt` query
+parameters for the observer location, defaulting to Paris (a public, non-identifying
+location) when omitted — pass the actual broadcast site's coordinates via the URL. Local
 circumstances (contact times, obscuration %, sun position) are computed with the
 [cosinekitty/astronomy](https://github.com/cosinekitty/astronomy) library (MIT), bundled
 inline in each file, with hardcoded fallback timings if the live computation throws.
@@ -20,6 +22,9 @@ Both are static, self-contained HTML files meant to be added as an OBS **Browser
 
 | Param | Description |
 |---|---|
+| `?lat=N` | Observer latitude in degrees (default `48.8566`, Paris). |
+| `?lon=N` | Observer longitude in degrees (default `2.3522`, Paris). |
+| `?alt=N` | Observer elevation in meters (default `35`). |
 | `?demo` | Enable demo mode: fast-forwards through the eclipse timeline instead of using real time. |
 | `?speed=N` | Demo playback speed multiplier (default `120`). Only relevant with `?demo`. |
 
@@ -27,6 +32,9 @@ Both are static, self-contained HTML files meant to be added as an OBS **Browser
 
 | Param | Description |
 |---|---|
+| `?lat=N` | Observer latitude in degrees (default `48.8566`, Paris). |
+| `?lon=N` | Observer longitude in degrees (default `2.3522`, Paris). |
+| `?alt=N` | Observer elevation in meters (default `35`). |
 | `?fs` | Start directly in the fullscreen layout (use on a dedicated browser source). |
 | `?noreal` | Start with the true-scale inset "real size" card hidden (still toggleable). |
 | `?obspw=PASSWORD` | obs-websocket authentication password. |

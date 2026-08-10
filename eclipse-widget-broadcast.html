@@ -232,6 +232,18 @@
     font-size: 40px; padding: 0 34px; align-self: stretch;
   }
   #bar.fs #timeline { height: 18px; }
+
+  /* ===== Sky-path chart (fullscreen only): Sun & Moon trajectories =====
+     Fills the empty middle of the red band between headline and countdown. */
+  #trajwrap { display: none; width: 100%; }
+  #bar.fs #trajwrap {
+    display: block; flex: 1 1 auto; min-height: 0;
+    animation: kFadeUp 0.55s ease-out 0.25s both;
+  }
+  #bar.fs #headline { flex: 0 0 auto; }
+  #bar.off #trajwrap { animation: kFadeDown 0.2s ease-in 0s both; }
+  #trajsvg { width: 100%; height: 100%; display: block; }
+  #trajsvg text { font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -267,6 +279,9 @@
   </div>
   <div id="redband">
     <div id="headline"><div id="status">…</div></div>
+    <div id="trajwrap">
+      <svg id="trajsvg" viewBox="0 0 1000 400" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+    </div>
     <div id="cdwrap">
       <div id="cdlabel">…</div>
       <div id="countdown">--:--:--</div>
@@ -344,6 +359,8 @@
   var q = new URLSearchParams(location.search);
   var OBS_PW = q.get('obspw') || '';
   var OBS_PORT = q.get('obsport') || '4455';
+  /* ?fs — start directly in the fullscreen layout (dedicated browser source) */
+  if (q.has('fs')) bar.classList.add('fs');
   function b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
   function sha256b64(str) {
     return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(b64);
@@ -752,6 +769,119 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
   // matches the drawn sun, whatever size the shell uses.
   var SUN_PX = parseFloat(elSun.getAttribute('r')) || 40;
 
+  // ===== Fullscreen sky chart: Sun & Moon paths across the eclipse evening.
+  // Azimuth → x, altitude → y, i.e. the sky as seen looking toward the sunset.
+  var trajUpdate = (function () {
+    var svg = $('trajsvg');
+    if (!svg) return function () {};
+    var W = 1000, H = 400, L = 62, R = 34, T = 30, B = 48;
+    var t0 = tC1 - 75 * 60000, t1 = tC4 + 25 * 60000;
+    var pts = [];
+    try {
+      for (var ts = t0; ts < t1; ts += 240000) pts.push(sunMoon(ts));
+      pts.push(sunMoon(t1));
+    } catch (e) { return function () {}; }
+
+    var azLo = Infinity, azHi = -Infinity, altLo = Infinity, altHi = -Infinity;
+    pts.forEach(function (p) {
+      azLo = Math.min(azLo, p.sHz.azimuth, p.mHz.azimuth);
+      azHi = Math.max(azHi, p.sHz.azimuth, p.mHz.azimuth);
+      altLo = Math.min(altLo, p.sHz.altitude, p.mHz.altitude);
+      altHi = Math.max(altHi, p.sHz.altitude, p.mHz.altitude);
+    });
+    azLo -= 1.5; azHi += 1.5;
+    altHi += 3; altLo = Math.min(Math.max(altLo - 2, -12), -3);
+    function x(az) { return L + (az - azLo) / (azHi - azLo) * (W - L - R); }
+    function y(al) { return T + (altHi - al) / (altHi - altLo) * (H - T - B); }
+
+    var xR = W - R, yB = H - B, yH = y(0);
+    var s = [];
+    // Altitude gridlines
+    for (var a = 10; a < altHi; a += 10) {
+      s.push('<line x1="' + L + '" y1="' + y(a).toFixed(1) + '" x2="' + xR + '" y2="' + y(a).toFixed(1) +
+             '" stroke="rgba(255,255,255,0.25)" stroke-width="1" stroke-dasharray="3 6"/>');
+      s.push('<text x="' + (L - 8) + '" y="' + (y(a) + 5).toFixed(1) +
+             '" text-anchor="end" font-size="15" fill="rgba(255,255,255,0.75)">' + a + '°</text>');
+    }
+    // Paths first, then the semi-transparent ground on top: whatever dips
+    // below the horizon stays visible but dimmed.
+    function polyPts(body) {
+      return pts.map(function (p) {
+        return x(p[body].azimuth).toFixed(1) + ',' + y(p[body].altitude).toFixed(1);
+      }).join(' ');
+    }
+    s.push('<polyline points="' + polyPts('sHz') +
+           '" fill="none" stroke="#ffd257" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>');
+    s.push('<polyline points="' + polyPts('mHz') +
+           '" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-dasharray="10 9" stroke-linecap="round"/>');
+    s.push('<rect x="' + L + '" y="' + yH.toFixed(1) + '" width="' + (xR - L) + '" height="' + (yB - yH).toFixed(1) +
+           '" fill="rgba(16,23,58,0.45)"/>');
+    s.push('<line x1="' + L + '" y1="' + yH.toFixed(1) + '" x2="' + xR + '" y2="' + yH.toFixed(1) +
+           '" stroke="#fff" stroke-width="2.5"/>');
+    // Azimuth ticks along the bottom + compass points on the horizon
+    for (var az = Math.ceil(azLo / 5) * 5; az <= azHi; az += 5) {
+      s.push('<line x1="' + x(az).toFixed(1) + '" y1="' + yB + '" x2="' + x(az).toFixed(1) + '" y2="' + (yB + 7) +
+             '" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>');
+      s.push('<text x="' + x(az).toFixed(1) + '" y="' + (yB + 26) +
+             '" text-anchor="middle" font-size="15" fill="rgba(255,255,255,0.75)">' + az + '°</text>');
+    }
+    // Contact markers on the Sun's path (computed first: compass letters that
+    // would sit under a below-horizon marker label are suppressed)
+    var markers = [
+      { t: tC1,     lbl: 'DÉBUT',   above: true,  lift: 0 },
+      { t: tPeak,   lbl: 'MAXIMUM', above: true,  lift: 0 },
+      { t: tSunset, lbl: 'COUCHER', above: true,  lift: 14 },
+      { t: tC4,     lbl: 'FIN',     above: false, lift: 0 }
+    ];
+    markers.forEach(function (mk) {
+      var g = sunMoon(mk.t);
+      mk.x = x(g.sHz.azimuth); mk.y = y(g.sHz.altitude);
+    });
+    for (var c = 0; c < 16; c++) {
+      var caz = c * 22.5;
+      if (caz <= azLo + 1 || caz >= azHi - 1) continue;
+      var cx = x(caz);
+      if (markers.some(function (mk) { return !mk.above && Math.abs(mk.x - cx) < 80; })) continue;
+      s.push('<text x="' + cx.toFixed(1) + '" y="' + (yH + 27).toFixed(1) +
+             '" text-anchor="middle" font-size="20" font-weight="900" fill="rgba(255,255,255,0.9)">' + compass(caz) + '</text>');
+    }
+    // Caption + legend
+    var dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ });
+    s.push('<text x="' + L + '" y="18" font-size="16" font-weight="900" letter-spacing="1" fill="rgba(255,255,255,0.9)">' +
+           'TRAJECTOIRE DANS LE CIEL · ' + dayFmt.format(new Date(tPeak)).toUpperCase() + '</text>');
+    s.push('<line x1="' + (xR - 210) + '" y1="13" x2="' + (xR - 172) + '" y2="13" stroke="#ffd257" stroke-width="5" stroke-linecap="round"/>');
+    s.push('<text x="' + (xR - 162) + '" y="18" font-size="15" font-weight="700" fill="#fff">SOLEIL</text>');
+    s.push('<line x1="' + (xR - 92) + '" y1="13" x2="' + (xR - 54) + '" y2="13" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-dasharray="8 7"/>');
+    s.push('<text x="' + (xR - 44) + '" y="18" font-size="15" font-weight="700" fill="#fff">LUNE</text>');
+    markers.forEach(function (mk) {
+      var mx = mk.x, my = mk.y;
+      s.push('<circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) +
+             '" r="6" fill="#fff" stroke="rgba(0,0,0,0.3)" stroke-width="1.5"/>');
+      var nameY = mk.above ? my - 34 - mk.lift : my + 28;
+      var timeY = mk.above ? my - 16 - mk.lift : my + 46;
+      s.push('<text x="' + mx.toFixed(1) + '" y="' + nameY.toFixed(1) +
+             '" text-anchor="middle" font-size="16" font-weight="900" fill="#fff">' + mk.lbl + '</text>');
+      s.push('<text x="' + mx.toFixed(1) + '" y="' + timeY.toFixed(1) +
+             '" text-anchor="middle" font-size="15" fill="rgba(255,255,255,0.85)">' + fmtTS(mk.t) + '</text>');
+    });
+    // Live position dots (Moon drawn last: it passes in front of the Sun)
+    s.push('<circle id="trajSun" r="9" fill="#ffce3a" stroke="#fff" stroke-width="2.5" style="display:none"/>');
+    s.push('<circle id="trajMoon" r="7" fill="#10173a" stroke="#fff" stroke-width="2" style="display:none"/>');
+    svg.innerHTML = s.join('');
+
+    var dotS = $('trajSun'), dotM = $('trajMoon');
+    return function (t, g) {
+      var show = t >= t0 && t <= t1;
+      dotS.style.display = show ? '' : 'none';
+      dotM.style.display = show ? '' : 'none';
+      if (!show) return;
+      dotS.setAttribute('cx', x(g.sHz.azimuth).toFixed(1));
+      dotS.setAttribute('cy', y(g.sHz.altitude).toFixed(1));
+      dotM.setAttribute('cx', x(g.mHz.azimuth).toFixed(1));
+      dotM.setAttribute('cy', y(g.mHz.altitude).toFixed(1));
+    };
+  })();
+
   function updateSlow() {
     var t = now();
     var g = sunMoon(t);
@@ -789,6 +919,8 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
     elBar.style.setProperty('--deep', ob.toFixed(3));
     // Sunset dimming of the sun disc
     elSun.style.opacity = alt < 0 ? Math.max(0, 1 + alt / 1.2).toFixed(2) : 1;
+    // Fullscreen sky chart: live Sun & Moon markers
+    trajUpdate(t, g);
   }
 
   function updateFast() {

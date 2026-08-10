@@ -544,11 +544,13 @@
       } else if (msg.op === 5 && msg.d.eventType === 'CustomEvent') {
         var d = msg.d.eventData || {};
         if (d.eclipseLowerThird === 'hide') playOut();
-        if (d.eclipseLowerThird === 'show') playIn();
+        /* 'on' means the bar is already revealed: skip re-running the
+           entrance animation on a redundant show/showFullscreen. */
+        if (d.eclipseLowerThird === 'show' && !bar.classList.contains('on')) playIn();
         /* Reveal straight into the fullscreen layout: sets 'fs' before the
            reveal animation runs, so it never shows the lower-third frame
            and skips the lower-third<->fullscreen morph entirely. */
-        if (d.eclipseLowerThird === 'showFullscreen') {
+        if (d.eclipseLowerThird === 'showFullscreen' && !bar.classList.contains('on')) {
           bar.classList.add('fs');
           playIn();
         }

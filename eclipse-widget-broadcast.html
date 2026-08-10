@@ -199,7 +199,7 @@
     display: none; position: absolute; inset: 0;
     width: 100%; height: 100%; pointer-events: none;
   }
-  #bar.fs #skychart { display: block; animation: kFadeUp 0.55s ease-out 0.25s both; }
+  #bar.fs #skychart { display: block; animation: kFadeUp 0.55s ease-out 0.25s backwards; }
   #skychart text { font-variant-numeric: tabular-nums; }
 
   /* The overlap disc rides the trajectory (left/top driven by JS, 1s linear
@@ -208,7 +208,10 @@
     position: absolute; width: 16vw; height: 16vw;
     margin-left: -8vw; margin-top: -8vw;
     left: var(--sunX, 50%); top: var(--sunY, 46%);
-    transition: left 1s linear, top 1s linear;
+    transition: left 1s linear, top 1s linear,
+                width 0.7s cubic-bezier(0.22,1,0.36,1),
+                height 0.7s cubic-bezier(0.22,1,0.36,1),
+                margin 0.7s cubic-bezier(0.22,1,0.36,1);
   }
   /* Visible Moon disc, same oversized scale as the Sun disc; its offset is
      the true angular offset, so it always sits exactly over the bite */
@@ -217,7 +220,15 @@
     display: block; position: absolute; width: 16vw; height: 16vw;
     margin-left: -8vw; margin-top: -8vw;
     left: var(--moonX, 50%); top: var(--moonY, 50%);
-    transition: left 1s linear, top 1s linear;
+    transition: left 1s linear, top 1s linear,
+                width 0.7s cubic-bezier(0.22,1,0.36,1),
+                height 0.7s cubic-bezier(0.22,1,0.36,1),
+                margin 0.7s cubic-bezier(0.22,1,0.36,1);
+  }
+  /* Wide (whole-day) view: smaller discs — the sky map covers ~230° */
+  #bar.fs.wide #skywrap, #bar.fs.wide #moonwrap {
+    width: 5vw; height: 5vw;
+    margin-left: -2.5vw; margin-top: -2.5vw;
   }
 
   /* White strap: top-right corner */
@@ -794,135 +805,210 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
   // matches the drawn sun, whatever size the shell uses.
   var SUN_PX = parseFloat(elSun.getAttribute('r')) || 40;
 
-  // ===== Fullscreen sky scene: Sun & Moon trajectories across the eclipse
-  // evening, drawn on the full canvas behind the overlap disc, which rides
-  // the Sun's path. Azimuth → x, altitude → y (the sky, facing the sunset).
+  // ===== Fullscreen sky scene: always-accurate Sun & Moon positions.
+  // Two chart views, switched automatically:
+  //  · "wide"  — before the eclipse evening: the whole current day's sky,
+  //    with the eclipse segment highlighted; both discs ride their own
+  //    live positions (you can watch the Moon close in on the Sun for days).
+  //  · "zoom"  — from 75 min before first contact: the eclipse evening only;
+  //    the Moon disc is placed at its true angular offset from the Sun at
+  //    the shared oversized disc scale, so it exactly matches the bite.
+  // Azimuth → x, altitude → y (the sky, facing the Sun).
   var skyUpdate = (function () {
     var svg = $('skychart'), wrap = $('skywrap');
     if (!svg || !wrap) return function () {};
-    var W = 1920, H = 1080, L = 90, R = 90, T = 230, YB = 950;
-    var t0 = tC1 - 75 * 60000, t1 = tC4 + 25 * 60000;
-    var pts = [];
-    try {
-      for (var ts = t0; ts < t1; ts += 240000) pts.push(sunMoon(ts));
-      pts.push(sunMoon(t1));
-    } catch (e) { return function () {}; }
-
-    var azLo = Infinity, azHi = -Infinity, altLo = Infinity, altHi = -Infinity;
-    pts.forEach(function (p) {
-      azLo = Math.min(azLo, p.sHz.azimuth, p.mHz.azimuth);
-      azHi = Math.max(azHi, p.sHz.azimuth, p.mHz.azimuth);
-      altLo = Math.min(altLo, p.sHz.altitude, p.mHz.altitude);
-      altHi = Math.max(altHi, p.sHz.altitude, p.mHz.altitude);
-    });
-    azLo -= 1.5; azHi += 1.5;
-    altHi += 3; altLo = Math.min(Math.max(altLo - 2, -12), -3);
-    function x(az) { return L + (az - azLo) / (azHi - azLo) * (W - L - R); }
-    function y(al) { return T + (altHi - al) / (altHi - altLo) * (YB - T); }
-
-    var xR = W - R, yH = y(0);
-    var s = [];
-    // Altitude gridlines
-    for (var a = 10; a < altHi; a += 10) {
-      s.push('<line x1="' + L + '" y1="' + y(a).toFixed(1) + '" x2="' + xR + '" y2="' + y(a).toFixed(1) +
-             '" stroke="rgba(255,255,255,0.16)" stroke-width="1" stroke-dasharray="3 7"/>');
-      s.push('<text x="' + (L - 12) + '" y="' + (y(a) + 5).toFixed(1) +
-             '" text-anchor="end" font-size="16" fill="rgba(255,255,255,0.55)">' + a + '°</text>');
-    }
-    // Paths first, then the semi-transparent ground on top: whatever dips
-    // below the horizon stays visible but dimmed.
-    function polyPts(body) {
-      return pts.map(function (p) {
-        return x(p[body].azimuth).toFixed(1) + ',' + y(p[body].altitude).toFixed(1);
-      }).join(' ');
-    }
-    s.push('<polyline points="' + polyPts('sHz') +
-           '" fill="none" stroke="#ffd257" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>');
-    s.push('<polyline points="' + polyPts('mHz') +
-           '" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="3.5" stroke-dasharray="12 10" stroke-linecap="round"/>');
-    // Ground bleeds to the screen edges, horizon line across the full width
-    s.push('<rect x="0" y="' + yH.toFixed(1) + '" width="' + W + '" height="' + (H - yH).toFixed(1) +
-           '" fill="rgba(0,0,0,0.35)"/>');
-    s.push('<line x1="0" y1="' + yH.toFixed(1) + '" x2="' + W + '" y2="' + yH.toFixed(1) +
-           '" stroke="#fff" stroke-width="3"/>');
-    // Contact markers on the Sun's path (computed first: compass letters that
-    // would collide with the below-horizon FIN label are suppressed)
-    var markers = [
-      { t: tC1,     lbl: 'DÉBUT',   above: true,  lift: 0 },
-      { t: tPeak,   lbl: 'MAXIMUM', above: true,  lift: 0 },
-      { t: tSunset, lbl: 'COUCHER', above: true,  lift: 16 },
-      { t: tC4,     lbl: 'FIN',     above: false, lift: 0 }
-    ];
-    markers.forEach(function (mk) {
-      var g = sunMoon(mk.t);
-      mk.x = x(g.sHz.azimuth); mk.y = y(g.sHz.altitude);
-    });
-    // Azimuth ticks under the horizon + compass points in the ground band
-    for (var az = Math.ceil(azLo / 5) * 5; az <= azHi; az += 5) {
-      s.push('<line x1="' + x(az).toFixed(1) + '" y1="' + yH.toFixed(1) + '" x2="' + x(az).toFixed(1) +
-             '" y2="' + (yH + 10).toFixed(1) + '" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>');
-      s.push('<text x="' + x(az).toFixed(1) + '" y="' + (yH + 32).toFixed(1) +
-             '" text-anchor="middle" font-size="15" fill="rgba(255,255,255,0.55)">' + az + '°</text>');
-    }
-    for (var c = 0; c < 16; c++) {
-      var caz = c * 22.5;
-      if (caz <= azLo + 1 || caz >= azHi - 1) continue;
-      var cx = x(caz);
-      if (markers.some(function (mk) { return !mk.above && Math.abs(mk.x - cx) < 110; })) continue;
-      s.push('<text x="' + cx.toFixed(1) + '" y="' + (yH + 68).toFixed(1) +
-             '" text-anchor="middle" font-size="24" font-weight="900" fill="rgba(255,255,255,0.85)">' + compass(caz) + '</text>');
-    }
-    // Caption + legend, right-aligned in the sky under the red block
-    var dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ });
-    s.push('<text x="' + xR + '" y="436" text-anchor="end" font-size="18" font-weight="900" letter-spacing="1" ' +
-           'fill="rgba(255,255,255,0.85)">TRAJECTOIRE DANS LE CIEL · ' +
-           dayFmt.format(new Date(tPeak)).toUpperCase() + '</text>');
-    s.push('<line x1="' + (xR - 270) + '" y1="466" x2="' + (xR - 230) + '" y2="466" stroke="#ffd257" stroke-width="6" stroke-linecap="round"/>');
-    s.push('<text x="' + (xR - 218) + '" y="472" font-size="16" font-weight="700" fill="#fff">SOLEIL</text>');
-    s.push('<line x1="' + (xR - 115) + '" y1="466" x2="' + (xR - 75) + '" y2="466" stroke="rgba(255,255,255,0.8)" stroke-width="3.5" stroke-dasharray="9 8"/>');
-    s.push('<text x="' + (xR - 63) + '" y="472" font-size="16" font-weight="700" fill="#fff">LUNE</text>');
-    markers.forEach(function (mk) {
-      var mx = mk.x, my = mk.y;
-      s.push('<circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) +
-             '" r="8" fill="#fff" stroke="rgba(0,0,0,0.35)" stroke-width="2"/>');
-      var nameY = mk.above ? my - 44 - mk.lift : my + 30;
-      var timeY = mk.above ? my - 22 - mk.lift : my + 52;
-      s.push('<text x="' + mx.toFixed(1) + '" y="' + nameY.toFixed(1) +
-             '" text-anchor="middle" font-size="20" font-weight="900" fill="#fff">' + mk.lbl + '</text>');
-      s.push('<text x="' + mx.toFixed(1) + '" y="' + timeY.toFixed(1) +
-             '" text-anchor="middle" font-size="18" fill="rgba(255,255,255,0.8)">' + fmtTS(mk.t) + '</text>');
-    });
-    svg.innerHTML = s.join('');
-
-    // The discs follow the sky live during the eclipse window and park at
-    // the window edges outside it (a preview before, sunk & faded after).
-    var DISC_T0 = tC1 - 30 * 60000, DISC_T1 = tC4;
-    var gPark0 = sunMoon(DISC_T0), gPark1 = sunMoon(DISC_T1);
     var moonWrap = $('moonwrap'), moonDisc = $('moondisc');
-    var DISC_VW = 16;   // must match the 16vw disc size in the fullscreen CSS
-    var BOX = 150;      // disc SVG viewBox size (-75..75)
+    var W = 1920, H = 1080, L = 90, R = 90, T = 230, YB = 950;
+    var ZOOM_VW = 16, WIDE_VW = 5, BOX = 150; // disc sizes: must match the CSS
+    var tz0 = tC1 - 75 * 60000, tz1 = tC4 + 25 * 60000;
+    var dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ });
+    var dateKey = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ });
+    var mode = '', builtDay = '', x = null, y = null;
+
+    // Sampling window of the wide view: the current day, sunrise → sunset
+    function wideWindow(t) {
+      try {
+        var p = {};
+        new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
+          .formatToParts(new Date(t)).forEach(function (q) { p[q.type] = q.value; });
+        var midnight = Date.parse(p.year + '-' + p.month + '-' + p.day + 'T00:00:00+02:00');
+        var rise = A.SearchRiseSet(A.Body.Sun, observer, +1, A.MakeTime(new Date(midnight)), 1).date.getTime();
+        var set = A.SearchRiseSet(A.Body.Sun, observer, -1, A.MakeTime(new Date(midnight + 43200000)), 1).date.getTime();
+        return [rise - 40 * 60000, set + 40 * 60000];
+      } catch (e) { return [t - 9 * 3600000, t + 9 * 3600000]; }
+    }
+
+    function buildChart(m, t) {
+      var ta, tb;
+      if (m === 'zoom') { ta = tz0; tb = tz1; }
+      else { var ww = wideWindow(t); ta = ww[0]; tb = ww[1]; }
+      var step = Math.max(240000, Math.round((tb - ta) / 110));
+      var pts = [];
+      for (var ts = ta; ts < tb; ts += step) pts.push(sunMoon(ts));
+      pts.push(sunMoon(tb));
+
+      var azLo = Infinity, azHi = -Infinity, altLo = Infinity, altHi = -Infinity;
+      pts.forEach(function (p) {
+        azLo = Math.min(azLo, p.sHz.azimuth, p.mHz.azimuth);
+        azHi = Math.max(azHi, p.sHz.azimuth, p.mHz.azimuth);
+        altLo = Math.min(altLo, p.sHz.altitude, p.mHz.altitude);
+        altHi = Math.max(altHi, p.sHz.altitude, p.mHz.altitude);
+      });
+      azLo -= 1.5; azHi += 1.5;
+      altHi += 3; altLo = Math.min(Math.max(altLo - 2, -12), -3);
+      x = function (az) { return L + (az - azLo) / (azHi - azLo) * (W - L - R); };
+      y = function (al) { return T + (altHi - al) / (altHi - altLo) * (YB - T); };
+
+      var xR = W - R, yH = y(0);
+      var s = [];
+      // Altitude gridlines
+      for (var a = 10; a < altHi; a += 10) {
+        s.push('<line x1="' + L + '" y1="' + y(a).toFixed(1) + '" x2="' + xR + '" y2="' + y(a).toFixed(1) +
+               '" stroke="rgba(255,255,255,0.16)" stroke-width="1" stroke-dasharray="3 7"/>');
+        s.push('<text x="' + (L - 12) + '" y="' + (y(a) + 5).toFixed(1) +
+               '" text-anchor="end" font-size="16" fill="rgba(255,255,255,0.55)">' + a + '°</text>');
+      }
+      // Paths first, then the semi-transparent ground on top: whatever dips
+      // below the horizon stays visible but dimmed.
+      function polyPts(list, body) {
+        return list.map(function (p) {
+          return x(p[body].azimuth).toFixed(1) + ',' + y(p[body].altitude).toFixed(1);
+        }).join(' ');
+      }
+      s.push('<polyline points="' + polyPts(pts, 'sHz') +
+             '" fill="none" stroke="#ffd257" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>');
+      s.push('<polyline points="' + polyPts(pts, 'mHz') +
+             '" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="3.5" stroke-dasharray="12 10" stroke-linecap="round"/>');
+      if (m === 'wide') {
+        // Highlight the eclipse segment of the Sun's path in red
+        var zone = [];
+        for (var tsz = tC1; tsz < tC4; tsz += 300000) zone.push(sunMoon(tsz));
+        zone.push(sunMoon(tC4));
+        s.push('<polyline points="' + polyPts(zone, 'sHz') +
+               '" fill="none" stroke="#e1000f" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>');
+      }
+      s.push('<rect x="0" y="' + yH.toFixed(1) + '" width="' + W + '" height="' + (H - yH).toFixed(1) +
+             '" fill="rgba(0,0,0,0.35)"/>');
+      s.push('<line x1="0" y1="' + yH.toFixed(1) + '" x2="' + W + '" y2="' + yH.toFixed(1) +
+             '" stroke="#fff" stroke-width="3"/>');
+      // Contact markers on the Sun's path
+      var markers = [
+        { t: tC1,     lbl: 'DÉBUT',   above: true,  lift: 0 },
+        { t: tPeak,   lbl: 'MAXIMUM', above: true,  lift: 0 },
+        { t: tSunset, lbl: 'COUCHER', above: true,  lift: 16 },
+        { t: tC4,     lbl: 'FIN',     above: false, lift: 0 }
+      ];
+      markers.forEach(function (mk) {
+        var gk = sunMoon(mk.t);
+        mk.x = x(gk.sHz.azimuth); mk.y = y(gk.sHz.altitude);
+      });
+      // Azimuth ticks under the horizon + compass points in the ground band
+      var azStep = (azHi - azLo) > 80 ? 15 : 5;
+      for (var az = Math.ceil(azLo / azStep) * azStep; az <= azHi; az += azStep) {
+        s.push('<line x1="' + x(az).toFixed(1) + '" y1="' + yH.toFixed(1) + '" x2="' + x(az).toFixed(1) +
+               '" y2="' + (yH + 10).toFixed(1) + '" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>');
+        s.push('<text x="' + x(az).toFixed(1) + '" y="' + (yH + 32).toFixed(1) +
+               '" text-anchor="middle" font-size="15" fill="rgba(255,255,255,0.55)">' + az + '°</text>');
+      }
+      for (var c = 0; c < 16; c++) {
+        var caz = c * 22.5;
+        if (caz <= azLo + 1 || caz >= azHi - 1) continue;
+        var cx = x(caz);
+        if (m === 'zoom' &&
+            markers.some(function (mk) { return !mk.above && Math.abs(mk.x - cx) < 110; })) continue;
+        s.push('<text x="' + cx.toFixed(1) + '" y="' + (yH + 68).toFixed(1) +
+               '" text-anchor="middle" font-size="24" font-weight="900" fill="rgba(255,255,255,0.85)">' + compass(caz) + '</text>');
+      }
+      // Caption + legend, right-aligned in the sky under the red block
+      var capDate = m === 'zoom' ? new Date(tPeak) : new Date(t);
+      s.push('<text x="' + xR + '" y="436" text-anchor="end" font-size="18" font-weight="900" letter-spacing="1" ' +
+             'fill="rgba(255,255,255,0.85)">TRAJECTOIRE DANS LE CIEL · ' +
+             dayFmt.format(capDate).toUpperCase() + '</text>');
+      s.push('<line x1="' + (xR - 270) + '" y1="466" x2="' + (xR - 230) + '" y2="466" stroke="#ffd257" stroke-width="6" stroke-linecap="round"/>');
+      s.push('<text x="' + (xR - 218) + '" y="472" font-size="16" font-weight="700" fill="#fff">SOLEIL</text>');
+      s.push('<line x1="' + (xR - 115) + '" y1="466" x2="' + (xR - 75) + '" y2="466" stroke="rgba(255,255,255,0.8)" stroke-width="3.5" stroke-dasharray="9 8"/>');
+      s.push('<text x="' + (xR - 63) + '" y="472" font-size="16" font-weight="700" fill="#fff">LUNE</text>');
+      if (m === 'zoom') {
+        markers.forEach(function (mk) {
+          s.push('<circle cx="' + mk.x.toFixed(1) + '" cy="' + mk.y.toFixed(1) +
+                 '" r="8" fill="#fff" stroke="rgba(0,0,0,0.35)" stroke-width="2"/>');
+          var nameY = mk.above ? mk.y - 44 - mk.lift : mk.y + 30;
+          var timeY = mk.above ? mk.y - 22 - mk.lift : mk.y + 52;
+          s.push('<text x="' + mk.x.toFixed(1) + '" y="' + nameY.toFixed(1) +
+                 '" text-anchor="middle" font-size="20" font-weight="900" fill="#fff">' + mk.lbl + '</text>');
+          s.push('<text x="' + mk.x.toFixed(1) + '" y="' + timeY.toFixed(1) +
+                 '" text-anchor="middle" font-size="18" fill="rgba(255,255,255,0.8)">' + fmtTS(mk.t) + '</text>');
+        });
+      } else {
+        // Compact eclipse label above the red segment
+        markers.forEach(function (mk) {
+          s.push('<circle cx="' + mk.x.toFixed(1) + '" cy="' + mk.y.toFixed(1) +
+                 '" r="5" fill="#fff" stroke="rgba(0,0,0,0.35)" stroke-width="1.5"/>');
+        });
+        var gz = sunMoon((tC1 + tC4) / 2);
+        var zx = x(gz.sHz.azimuth), zy = y(gz.sHz.altitude);
+        s.push('<text x="' + zx.toFixed(1) + '" y="' + (zy - 56).toFixed(1) +
+               '" text-anchor="middle" font-size="20" font-weight="900" fill="#fff">ÉCLIPSE</text>');
+        s.push('<text x="' + zx.toFixed(1) + '" y="' + (zy - 34).toFixed(1) +
+               '" text-anchor="middle" font-size="17" fill="rgba(255,255,255,0.8)">' +
+               fmtTS(tC1) + ' – ' + fmtTS(tC4) + '</text>');
+      }
+      return s.join('');
+    }
+
+    function rebuild(m, t) {
+      var first = !mode;
+      mode = m;
+      builtDay = m === 'wide' ? dateKey.format(new Date(t)) : '';
+      var html;
+      try { html = buildChart(m, t); } catch (e) { return; }
+      elBar.classList.toggle('wide', m === 'wide');
+      if (first) { svg.innerHTML = html; return; }
+      // Dip-to-rebuild: quick fade while the discs glide to the new scale
+      svg.style.transition = 'opacity 0.3s ease';
+      svg.style.opacity = 0;
+      setTimeout(function () { svg.innerHTML = html; svg.style.opacity = 1; }, 320);
+    }
+
     return function (t, g) {
-      var gd = t < DISC_T0 ? gPark0 : (t > DISC_T1 ? gPark1 : g);
-      var sxPct = x(gd.sHz.azimuth) / W * 100;
-      var syPct = y(gd.sHz.altitude) / H * 100;
-      wrap.style.setProperty('--sunX', sxPct.toFixed(2) + '%');
-      wrap.style.setProperty('--sunY', syPct.toFixed(2) + '%');
+      var m = t < tz0 ? 'wide' : 'zoom';
+      if (m !== mode || (m === 'wide' && dateKey.format(new Date(t)) !== builtDay)) rebuild(m, t);
+      if (!x) return;
+      var sx = x(g.sHz.azimuth), sy = y(g.sHz.altitude);
+      wrap.style.setProperty('--sunX', (sx / W * 100).toFixed(2) + '%');
+      wrap.style.setProperty('--sunY', (sy / H * 100).toFixed(2) + '%');
       if (!moonWrap || !moonDisc) return;
-      // Visible Moon disc: true angular offset from the Sun at the shared
-      // oversized disc scale — the same math as the bite mask, so the disc
-      // always sits exactly over the bite.
-      var degPerRad = 180 / Math.PI;
-      var pxPerDeg = SUN_PX / (gd.rSun * degPerRad);
-      var dAz = gd.mHz.azimuth - gd.sHz.azimuth;
-      if (dAz > 180) dAz -= 360; if (dAz < -180) dAz += 360;
-      var dx = dAz * Math.cos(gd.sHz.altitude * Math.PI / 180) * pxPerDeg;
-      var dy = -(gd.mHz.altitude - gd.sHz.altitude) * pxPerDeg;
-      var aspect = (window.innerWidth || W) / (window.innerHeight || H);
-      moonWrap.style.setProperty('--moonX', (sxPct + dx / BOX * DISC_VW).toFixed(2) + '%');
-      moonWrap.style.setProperty('--moonY', (syPct + dy / BOX * DISC_VW * aspect).toFixed(2) + '%');
-      moonDisc.setAttribute('r', ((gd.rMoon / gd.rSun) * SUN_PX).toFixed(2));
-      // Fade with the horizon like the Sun disc
-      var malt = gd.mHz.altitude;
+      moonDisc.setAttribute('r', ((g.rMoon / g.rSun) * SUN_PX).toFixed(2));
+      var mxPct, myPct;
+      if (m === 'zoom') {
+        // True angular offset from the Sun at the shared oversized disc
+        // scale — the same math as the bite mask, so the disc always sits
+        // exactly over the bite.
+        var degPerRad = 180 / Math.PI;
+        var pxPerDeg = SUN_PX / (g.rSun * degPerRad);
+        var dAz = g.mHz.azimuth - g.sHz.azimuth;
+        if (dAz > 180) dAz -= 360; if (dAz < -180) dAz += 360;
+        var dx = dAz * Math.cos(g.sHz.altitude * Math.PI / 180) * pxPerDeg;
+        var dy = -(g.mHz.altitude - g.sHz.altitude) * pxPerDeg;
+        var aspect = (window.innerWidth || W) / (window.innerHeight || H);
+        mxPct = sx / W * 100 + dx / BOX * ZOOM_VW;
+        myPct = sy / H * 100 + dy / BOX * ZOOM_VW * aspect;
+      } else {
+        // Own live position on the sky map. The discs are oversized, so
+        // keep them from overlapping while the real bodies are still far
+        // apart: clamp the Moon to "just touching" along the true bearing.
+        var mx = x(g.mHz.azimuth), my = y(g.mHz.altitude);
+        var ddx = mx - sx, ddy = my - sy;
+        var d = Math.sqrt(ddx * ddx + ddy * ddy);
+        var discU = WIDE_VW / 100 * W;
+        var minD = discU * (SUN_PX / BOX) * (1 + g.rMoon / g.rSun) + 4;
+        if (d > 0 && d < minD) { ddx *= minD / d; ddy *= minD / d; }
+        mxPct = (sx + ddx) / W * 100;
+        myPct = (sy + ddy) / H * 100;
+      }
+      moonWrap.style.setProperty('--moonX', mxPct.toFixed(2) + '%');
+      moonWrap.style.setProperty('--moonY', myPct.toFixed(2) + '%');
+      var malt = g.mHz.altitude;
       moonWrap.style.opacity = malt < 0 ? Math.max(0, 1 + malt / 1.2).toFixed(2) : 1;
     };
   })();

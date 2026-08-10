@@ -32,8 +32,16 @@ Both are static, self-contained HTML files meant to be added as an OBS **Browser
 | `?obspw=PASSWORD` | obs-websocket authentication password. |
 | `?obsport=PORT` | obs-websocket port (default `4455`). |
 | `?companion=HOST[:PORT]` | Enables pushing live state to a Bitfocus Companion instance's custom-variable HTTP API (port defaults to `8000`, Companion's web/API port). |
+| `?noautoanim` | Disable the automatic slide-in/out that normally follows the OBS source's own visibility toggle (see below). |
 
 ## Control: driving the widget from OBS / Companion
+
+By default, the bar automatically slides in whenever OBS marks its Browser Source as
+visible (e.g. the scene containing it goes live) and parks off-screen the moment the
+source is hidden — no Companion action needed. Add `?noautoanim` to turn this off: the
+source's own visibility no longer drives the animation, and the bar only reacts to
+explicit `show`/`hide` commands (below), so you can, for example, leave the source
+always-visible in OBS and use Companion buttons as the sole on/off switch.
 
 The broadcast widget opens a WebSocket to `ws://127.0.0.1:<obsport>` (obs-websocket v5
 protocol) and authenticates with `obspw` when OBS requires it (SHA-256 challenge/salt

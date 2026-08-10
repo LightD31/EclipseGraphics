@@ -38,7 +38,7 @@
   /* Hidden base states (parked, before .on) */
   #redband { position: relative; overflow: hidden; clip-path: inset(0 100% 0 0); }
   #sunpanel { transform: translate3d(-110%, 0, 0); }
-  #skywrap { transform: scale(0); }
+  #skywrap, #moonwrap { transform: scale(0); }
   #strap, #ticker { transform: translate3d(0, 110%, 0); }
   #status, #cdwrap, .seg, #clock { opacity: 0; }
   #timeline { transform: scaleX(0); transform-origin: left center; }
@@ -64,6 +64,7 @@
   #bar.on #ticker         { animation: kRise  0.5s  cubic-bezier(0.22,1,0.36,1) 0.35s  both; }
   #bar.on #cdwrap         { animation: kFadeUp 0.4s ease-out                    0.38s  both; }
   #bar.on #skywrap        { animation: kPop   0.5s  cubic-bezier(0.34,1.56,0.64,1) 0.45s both; }
+  #bar.on #moonwrap       { animation: kPop   0.5s  cubic-bezier(0.34,1.56,0.64,1) 0.55s both; }
   #bar.on #redband::after { animation: kSheen 0.7s  ease                        0.5s   both; }
   #bar.on #strap          { animation: kRise  0.45s cubic-bezier(0.22,1,0.36,1) 0.55s  both; }
   #bar.on .seg            { animation: kText  0.35s ease-out both; }
@@ -209,6 +210,15 @@
     left: var(--sunX, 50%); top: var(--sunY, 46%);
     transition: left 1s linear, top 1s linear;
   }
+  /* Visible Moon disc, same oversized scale as the Sun disc; its offset is
+     the true angular offset, so it always sits exactly over the bite */
+  #moonwrap { display: none; }
+  #bar.fs #moonwrap {
+    display: block; position: absolute; width: 16vw; height: 16vw;
+    margin-left: -8vw; margin-top: -8vw;
+    left: var(--moonX, 50%); top: var(--moonY, 50%);
+    transition: left 1s linear, top 1s linear;
+  }
 
   /* White strap: top-right corner */
   #bar.fs .rv-strap { position: absolute; top: 0; right: 0; width: auto; max-width: none; }
@@ -262,6 +272,18 @@
           </mask>
         </defs>
         <circle id="sun" cx="0" cy="0" r="62" fill="url(#sunGrad)" mask="url(#biteMask)"/>
+      </svg>
+    </div>
+    <div id="moonwrap" aria-hidden="true">
+      <svg viewBox="-75 -75 150 150" width="100%" height="100%">
+        <defs>
+          <radialGradient id="moonGrad">
+            <stop offset="0%" stop-color="#242e58"/>
+            <stop offset="78%" stop-color="#1b2349"/>
+            <stop offset="100%" stop-color="#161c3e"/>
+          </radialGradient>
+        </defs>
+        <circle id="moondisc" cx="0" cy="0" r="63.9" fill="url(#moonGrad)" stroke="rgba(255,255,255,0.4)" stroke-width="1.2"/>
       </svg>
     </div>
   </div>
@@ -872,14 +894,36 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
     });
     svg.innerHTML = s.join('');
 
-    // The disc follows the Sun live during the eclipse window and parks at
+    // The discs follow the sky live during the eclipse window and park at
     // the window edges outside it (a preview before, sunk & faded after).
     var DISC_T0 = tC1 - 30 * 60000, DISC_T1 = tC4;
     var gPark0 = sunMoon(DISC_T0), gPark1 = sunMoon(DISC_T1);
+    var moonWrap = $('moonwrap'), moonDisc = $('moondisc');
+    var DISC_VW = 16;   // must match the 16vw disc size in the fullscreen CSS
+    var BOX = 150;      // disc SVG viewBox size (-75..75)
     return function (t, g) {
       var gd = t < DISC_T0 ? gPark0 : (t > DISC_T1 ? gPark1 : g);
-      wrap.style.setProperty('--sunX', (x(gd.sHz.azimuth) / W * 100).toFixed(2) + '%');
-      wrap.style.setProperty('--sunY', (y(gd.sHz.altitude) / H * 100).toFixed(2) + '%');
+      var sxPct = x(gd.sHz.azimuth) / W * 100;
+      var syPct = y(gd.sHz.altitude) / H * 100;
+      wrap.style.setProperty('--sunX', sxPct.toFixed(2) + '%');
+      wrap.style.setProperty('--sunY', syPct.toFixed(2) + '%');
+      if (!moonWrap || !moonDisc) return;
+      // Visible Moon disc: true angular offset from the Sun at the shared
+      // oversized disc scale — the same math as the bite mask, so the disc
+      // always sits exactly over the bite.
+      var degPerRad = 180 / Math.PI;
+      var pxPerDeg = SUN_PX / (gd.rSun * degPerRad);
+      var dAz = gd.mHz.azimuth - gd.sHz.azimuth;
+      if (dAz > 180) dAz -= 360; if (dAz < -180) dAz += 360;
+      var dx = dAz * Math.cos(gd.sHz.altitude * Math.PI / 180) * pxPerDeg;
+      var dy = -(gd.mHz.altitude - gd.sHz.altitude) * pxPerDeg;
+      var aspect = (window.innerWidth || W) / (window.innerHeight || H);
+      moonWrap.style.setProperty('--moonX', (sxPct + dx / BOX * DISC_VW).toFixed(2) + '%');
+      moonWrap.style.setProperty('--moonY', (syPct + dy / BOX * DISC_VW * aspect).toFixed(2) + '%');
+      moonDisc.setAttribute('r', ((gd.rMoon / gd.rSun) * SUN_PX).toFixed(2));
+      // Fade with the horizon like the Sun disc
+      var malt = gd.mHz.altitude;
+      moonWrap.style.opacity = malt < 0 ? Math.max(0, 1 + malt / 1.2).toFixed(2) : 1;
     };
   })();
 

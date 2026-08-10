@@ -405,14 +405,15 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
 (function () {
   'use strict';
   var A = Astronomy;
-  var LAT = 45.02262, LON = 1.11732, ELEV = 180;
+  // --- URL params ---
+  var params = new URLSearchParams(location.search);
+  // Defaults to Paris (public, non-identifying); pass ?lat=&lon=&alt= for the actual broadcast site.
+  var LAT = parseFloat(params.get('lat') || '48.8566'), LON = parseFloat(params.get('lon') || '2.3522'), ELEV = parseFloat(params.get('alt') || '35');
   var TZ = 'Europe/Paris';
   var observer = new A.Observer(LAT, LON, ELEV);
   var KM_PER_AU = 1.4959787069098932e8;
   var SUN_KM = 695700, MOON_KM = 1737.4;
 
-  // --- URL params ---
-  var params = new URLSearchParams(location.search);
   var DEMO = params.has('demo');
   var DEMO_SPEED = parseFloat(params.get('speed') || '120');
   var demoAnchorReal = Date.now();

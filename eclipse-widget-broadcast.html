@@ -474,7 +474,7 @@
   /* ===== obs-websocket client: lets Companion drive the widget.
      Browser source URL params: ?obspw=PASSWORD (&obsport=4455)
      Companion sends: BroadcastCustomEvent {"eventData":{"eclipseLowerThird":"<cmd>"}}
-     Commands: hide · show · fullscreen · lower · toggleView
+     Commands: hide · show · showFullscreen · fullscreen · lower · toggleView
                showReal · hideReal · toggleReal (true-scale inset card) */
   var OBS_PW = q.get('obspw') || '';
   var OBS_PORT = q.get('obsport') || '4455';
@@ -545,6 +545,13 @@
         var d = msg.d.eventData || {};
         if (d.eclipseLowerThird === 'hide') playOut();
         if (d.eclipseLowerThird === 'show') playIn();
+        /* Reveal straight into the fullscreen layout: sets 'fs' before the
+           reveal animation runs, so it never shows the lower-third frame
+           and skips the lower-third<->fullscreen morph entirely. */
+        if (d.eclipseLowerThird === 'showFullscreen') {
+          bar.classList.add('fs');
+          playIn();
+        }
         if (d.eclipseLowerThird === 'fullscreen' && !bar.classList.contains('fs')) {
           switchView(function () { bar.classList.add('fs'); });
         }

@@ -937,8 +937,10 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
              '" fill="none" stroke="#ffd257" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>');
       s.push('<polyline points="' + polyPts(pts, 'mHz') +
              '" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="3.5" stroke-dasharray="12 10" stroke-linecap="round"/>');
-      if (m === 'wide') {
-        // Highlight the eclipse segment of the Sun's path in red
+      // The eclipse zone belongs to the eclipse day only: on any other
+      // day's chart it is not drawn at all.
+      var eclToday = dateKey.format(new Date(t)) === dateKey.format(new Date(tPeak));
+      if (m === 'wide' && eclToday) {
         var zone = [];
         for (var tsz = tC1; tsz < tC4; tsz += 300000) zone.push(sunMoon(tsz));
         zone.push(sunMoon(tC4));
@@ -997,7 +999,7 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
           s.push('<text x="' + mk.x.toFixed(1) + '" y="' + timeY.toFixed(1) +
                  '" text-anchor="middle" font-size="18" fill="rgba(255,255,255,0.8)">' + fmtTS(mk.t) + '</text>');
         });
-      } else {
+      } else if (eclToday) {
         // Compact eclipse label above the red segment
         markers.forEach(function (mk) {
           s.push('<circle cx="' + mk.x.toFixed(1) + '" cy="' + mk.y.toFixed(1) +
@@ -1082,7 +1084,8 @@ return new kd(this.curr.time,a,b)};$jscomp.global.Object.defineProperties(H.prot
     }
 
     return function (t, g, ob) {
-      var m = t < tz0 ? 'wide' : 'zoom';
+      /* Zoom only around the eclipse evening; back to the day chart after */
+      var m = (t < tz0 || t > tz1 + 5400000) ? 'wide' : 'zoom';
       if (m !== mode || (m === 'wide' && dateKey.format(new Date(t)) !== builtDay)) rebuild(m, t);
       updateRealView(g, ob || 0);
       if (!x) return;

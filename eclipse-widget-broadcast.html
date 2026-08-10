@@ -410,6 +410,11 @@
 (function () {
   var bar = document.getElementById('bar');
   var animated = false;
+  var q = new URLSearchParams(location.search);
+  /* ?noautoanim — don't auto slide in/out when the OBS source's own
+     visibility toggles; the bar then only reacts to explicit Companion
+     show/hide commands (see the obs-websocket client below). */
+  var AUTO_ANIM = !q.has('noautoanim');
   function playIn() {
     animated = true;
     bar.classList.remove('on');
@@ -435,15 +440,17 @@
     }
   }
   if (window.obsstudio) {
-    window.addEventListener('obsSourceVisibleChanged', function (e) {
-      if (e.detail && e.detail.visible) playIn();
-      else reset();
-    });
-    /* Fallback: if the page loaded while already visible and OBS sends no
-       initial event, animate in shortly after load. */
-    window.addEventListener('load', function () {
-      setTimeout(function () { if (!animated) playIn(); }, 400);
-    });
+    if (AUTO_ANIM) {
+      window.addEventListener('obsSourceVisibleChanged', function (e) {
+        if (e.detail && e.detail.visible) playIn();
+        else reset();
+      });
+      /* Fallback: if the page loaded while already visible and OBS sends no
+         initial event, animate in shortly after load. */
+      window.addEventListener('load', function () {
+        setTimeout(function () { if (!animated) playIn(); }, 400);
+      });
+    }
   } else {
     window.addEventListener('load', playIn);
     /* Outside OBS: click to preview out/in, double-click to preview the
@@ -469,11 +476,11 @@
      Companion sends: BroadcastCustomEvent {"eventData":{"eclipseLowerThird":"<cmd>"}}
      Commands: hide · show · fullscreen · lower · toggleView
                showReal · hideReal · toggleReal (true-scale inset card) */
-  var q = new URLSearchParams(location.search);
   var OBS_PW = q.get('obspw') || '';
   var OBS_PORT = q.get('obsport') || '4455';
   /* ?fs — start directly in the fullscreen layout (dedicated browser source)
-     ?noreal — start with the true-scale inset card hidden (still toggleable) */
+     ?noreal — start with the true-scale inset card hidden (still toggleable)
+     ?noautoanim — see AUTO_ANIM above: disable auto slide on source visibility */
   if (q.has('fs')) bar.classList.add('fs');
   if (q.has('noreal')) bar.classList.add('noreal');
   /* Preview shortcut (and OBS "Interact"): R toggles the true-scale card */

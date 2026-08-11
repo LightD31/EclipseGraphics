@@ -15,6 +15,7 @@ from `astronomy.browser.min.js`, with hardcoded fallback timings if the live com
 | `eclipse-widget.html` | Compact status bar widget. Supports a demo/preview mode, no OBS or Companion integration. |
 | `eclipse-widget-broadcast.html` | Full broadcast overlay (lower-third + fullscreen scene) with live obs-websocket control and Bitfocus Companion feedback. |
 | `astronomy.browser.min.js` | Shared Astronomy Engine library (MIT), loaded by both widgets via `<script src>`. |
+| `twitch-messages.md` | Ready-to-paste Twitch chat messages (French), built from the Companion custom variables below. |
 
 Both widgets are meant to be added as an OBS **Browser Source** (transparent background).
 Since `astronomy.browser.min.js` is now a separate file, keep it alongside the widget HTML
@@ -112,7 +113,30 @@ for button feedbacks and key text (e.g. `$(custom:eclipse_countdown)`):
 | `eclipse_countdown` | e.g. `00:13:41` or `2d 05h 42m` | Countdown to the next milestone shown in the widget. |
 | `eclipse_obscuration` | `0.0`–`100.0` | Percentage of the sun's disc currently obscured. |
 
-Variables are only pushed when their value changes.
+Alongside those, the widget pushes a set of ready-to-read French strings, meant to be
+dropped straight into Companion text — a Twitch status message, button labels, a
+stinger caption — without any reformatting:
+
+| Variable | Example | Description |
+|---|---|---|
+| `eclipse_status` | `Éclipse en cours` | Current phase, in sentence case. |
+| `eclipse_next` | `maximum dans` | Label of the next milestone; empty once the eclipse is over. |
+| `eclipse_eta` | `24 min`, `1 h 03`, `2 j 05 h` | Coarse countdown to that milestone (empty once over). Unlike `eclipse_countdown` it only changes once a minute, so text built from it doesn't churn every second. |
+| `eclipse_pct` | `42,7 %` | Current obscuration, French-formatted with its sign. |
+| `eclipse_sun` | `12,3° au-dessus de l'horizon (OSO)` | Sun altitude and compass bearing, or `sous l'horizon`. |
+| `eclipse_pct_max` | `96,4 %` | Maximum obscuration for the site. |
+| `eclipse_t_c1` / `eclipse_t_max` / `eclipse_t_sunset` / `eclipse_t_c4` | `19:28` | Local times of first contact, maximum, sunset and last contact. |
+
+Variables are only pushed when their value changes — except the static ones
+(`eclipse_pct_max`, `eclipse_t_*`), re-sent every minute so a Companion restarted
+mid-show picks them back up instead of staying stuck with empty values.
+
+### Periodic Twitch status message
+
+[`twitch-messages.md`](twitch-messages.md) has ready-to-paste chat messages built from
+those variables — one per `eclipse_phase` value, plus an all-phases version and short
+variants — for a Companion trigger that posts the eclipse's live state to chat every
+few minutes.
 
 ## License
 

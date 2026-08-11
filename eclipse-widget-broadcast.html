@@ -501,12 +501,28 @@
        eclipse_phase        attente | en_cours | max_passe |
                             sous_horizon | terminee
        eclipse_countdown    e.g. 00:13:41 or 2d 05h 42m
-       eclipse_obscuration  0.0 – 100.0 */
+       eclipse_obscuration  0.0 – 100.0
+     Plus a set of ready-to-read French strings, meant to be dropped straight
+     into chat/on-screen text (Twitch status message, button labels, …):
+       eclipse_status       e.g. "Éclipse en cours"
+       eclipse_next         e.g. "Maximum dans" ("" once it's over)
+       eclipse_eta          coarse countdown, e.g. "24 min" / "1 h 03" /
+                            "2 j 05 h" ("" once it's over) — changes at most
+                            once a minute, unlike eclipse_countdown
+       eclipse_pct          current obscuration, e.g. "42,7 %"
+       eclipse_sun          e.g. "12,3° au-dessus de l'horizon (OSO)"
+       eclipse_pct_max      maximum obscuration, e.g. "96,4 %"      (static)
+       eclipse_t_c1/_max/_sunset/_c4  local times, e.g. "19:28"     (static)
+     The static ones are re-sent every minute so a Companion restarted
+     mid-show picks them back up. */
   var COMP = q.get('companion');
   if (COMP && COMP.indexOf(':') < 0) COMP += ':8000';
   var compLast = {};
-  window.eclipseFeedback = function (name, value) {
-    if (!COMP || compLast[name] === value) return;
+  /* force: push even when the value hasn't changed — used to periodically
+     re-send the static variables, so a Companion restarted mid-show doesn't
+     stay stuck with empty contact times. */
+  window.eclipseFeedback = function (name, value, force) {
+    if (!COMP || (compLast[name] === value && !force)) return;
     compLast[name] = value;
     fetch('http://' + COMP + '/api/custom-variable/eclipse_' + name +
           '/value?value=' + encodeURIComponent(value),
@@ -680,6 +696,18 @@
     }
     return pad(h) + ':' + pad(m) + ':' + pad(sec);
   }
+  /* Coarse, human-readable countdown for chat/on-screen text: "2 j 05 h",
+     "1 h 03", "24 min", "moins d'une minute". Only changes once a minute, so
+     a Twitch message built from it doesn't churn every second. */
+  function fmtEta(ms) {
+    if (ms < 0) ms = 0;
+    var m = Math.floor(ms / 60000);
+    if (m >= 1440) return Math.floor(m / 1440) + ' j ' + pad(Math.floor((m % 1440) / 60)) + ' h';
+    if (m >= 60) return Math.floor(m / 60) + ' h ' + pad(m % 60);
+    if (m >= 1) return m + ' min';
+    return 'moins d\'une minute';
+  }
+  function fmtPct(frac) { return (frac * 100).toFixed(1).replace('.', ',') + ' %'; }
   function compass(az) {
     var dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
     return dirs[Math.round(az / 22.5) % 16];
@@ -698,6 +726,19 @@
   $('tMaxPct').textContent = (peakObsc * 100).toFixed(1).replace('.', ',') + '%';
   $('tSet').textContent = fmtTS(tSunset);
   $('tC4').textContent = fmtTS(tC4);
+
+  // Same circumstances, pushed to Companion as ready-to-read strings. They
+  // never change, but are re-sent every minute in case Companion restarts.
+  function pushStatics() {
+    if (!window.eclipseFeedback) return;
+    eclipseFeedback('pct_max', fmtPct(peakObsc), true);
+    eclipseFeedback('t_c1', fmtTS(tC1), true);
+    eclipseFeedback('t_max', fmtTS(tPeak), true);
+    eclipseFeedback('t_sunset', fmtTS(tSunset), true);
+    eclipseFeedback('t_c4', fmtTS(tC4), true);
+  }
+  pushStatics();
+  setInterval(pushStatics, 60000);
 
   // Timeline marker positions (C1 → C4 = 0 → 100%)
   function frac(t) { return (t - tC1) / (tC4 - tC1) * 100; }
@@ -981,7 +1022,10 @@
 
     // Live percentage
     elPct.textContent = (ob * 100).toFixed(1).replace('.', ',') + '%';
-    if (window.eclipseFeedback) eclipseFeedback('obscuration', (ob * 100).toFixed(1));
+    if (window.eclipseFeedback) {
+      eclipseFeedback('obscuration', (ob * 100).toFixed(1));
+      eclipseFeedback('pct', fmtPct(ob));
+    }
 
     // Sun position
     var alt = g.sHz.altitude, az = g.sHz.azimuth;
@@ -989,6 +1033,11 @@
       elSunpos.textContent = 'SOLEIL  ALT ' + alt.toFixed(1).replace('.', ',') + '° · AZ ' + az.toFixed(0) + '° ' + compass(az);
     } else {
       elSunpos.textContent = 'SOLEIL SOUS L\'HORIZON';
+    }
+    if (window.eclipseFeedback) {
+      eclipseFeedback('sun', alt > -1.2
+        ? alt.toFixed(1).replace('.', ',') + '° au-dessus de l\'horizon (' + compass(az) + ')'
+        : 'sous l\'horizon');
     }
 
     // Sun/Moon graphic: offset of moon relative to sun as seen in the sky
@@ -1020,22 +1069,29 @@
     var t = now();
     elClock.textContent = fmtT(t) + (DEMO ? '  [DEMO ×' + DEMO_SPEED + ']' : '');
 
-    var status, label, target, phase;
+    // status/label drive the widget itself (uppercase); hStatus/hNext are the
+    // same thing in plain sentence case, for Companion text (Twitch message…).
+    var status, label, target, phase, hStatus, hNext;
     if (t < tC1) {
       status = 'L\'ÉCLIPSE COMMENCE BIENTÔT'; phase = 'attente';
       label = 'PREMIER CONTACT DANS'; target = tC1;
+      hStatus = 'L\'éclipse commence bientôt'; hNext = 'premier contact dans';
     } else if (t < tPeak) {
       status = 'ÉCLIPSE EN COURS'; phase = 'en_cours';
       label = 'MAXIMUM (' + (peakObsc * 100).toFixed(1).replace('.', ',') + '%) DANS'; target = tPeak;
+      hStatus = 'Éclipse en cours'; hNext = 'maximum dans';
     } else if (t < tSunset) {
       status = 'MAXIMUM PASSÉ'; phase = 'max_passe';
       label = 'COUCHER DU SOLEIL DANS'; target = tSunset;
+      hStatus = 'Maximum passé'; hNext = 'coucher du Soleil dans';
     } else if (t < tC4) {
       status = 'SOLEIL COUCHÉ · ÉCLIPSE ENCORE EN COURS'; phase = 'sous_horizon';
       label = 'FIN DE L\'ÉCLIPSE (SOUS L\'HORIZON) DANS'; target = tC4;
+      hStatus = 'Soleil couché, éclipse encore en cours'; hNext = 'fin de l\'éclipse (sous l\'horizon) dans';
     } else {
       status = 'L\'ÉCLIPSE EST TERMINÉE'; phase = 'terminee';
       label = 'MERCI D\'AVOIR SUIVI'; target = null;
+      hStatus = 'L\'éclipse est terminée'; hNext = '';
     }
     elStatus.textContent = status;
     elCdLbl.textContent = label;
@@ -1043,6 +1099,9 @@
     if (window.eclipseFeedback) {
       eclipseFeedback('phase', phase);
       eclipseFeedback('countdown', elCd.textContent);
+      eclipseFeedback('status', hStatus);
+      eclipseFeedback('next', hNext);
+      eclipseFeedback('eta', target ? fmtEta(target - t) : '');
     }
 
     // Timeline progress

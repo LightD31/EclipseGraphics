@@ -518,6 +518,54 @@
       playIn();
     }
   }
+
+  /* ===== Command vocabulary =====
+     Every command reads <property>.<value>: one namespace per thing the
+     widget can be, .toggle on each, and the values are the ones the matching
+     Companion variable reports back (eclipse_layout, eclipse_main, …), so a
+     button's command and its feedback compare against the same word.
+       air     on | off | toggle      on air, or parked off-screen
+       layout  full | lower | toggle  which layout
+       main    sky | real | toggle    which view owns the canvas (fullscreen)
+       card    on | off | toggle      the corner card
+     air.on.full / air.on.lower land on air in a named layout in one step:
+     off air they set the layout before revealing, so the other layout is
+     never on screen and there is no morph to sit through; already on air
+     they morph across. Everything below — Companion, the preview clicks and
+     the keyboard shortcuts — goes through command(), so there is one path
+     per state change and no second implementation to keep in step. */
+  function isOn() { return bar.classList.contains('on'); }
+  function isFs() { return bar.classList.contains('fs'); }
+  function setState(name, want) {
+    if (bar.classList.contains(name) === want) return;
+    /* Off air there is nothing on screen to morph: set it straight, which
+       also keeps the no-View-Transitions fallback from revealing the bar. */
+    if (isOn()) switchView(function () { bar.classList.toggle(name, want); });
+    else bar.classList.toggle(name, want);
+  }
+  function command(cmd) {
+    switch (cmd) {
+      case 'air.on':     if (!isOn()) playIn(); break;
+      case 'air.off':    if (isOn()) playOut(); break;
+      case 'air.toggle': if (isOn()) playOut(); else playIn(); break;
+      case 'air.on.full':
+      case 'air.on.lower':
+        if (isOn()) setState('fs', cmd === 'air.on.full');
+        else { bar.classList.toggle('fs', cmd === 'air.on.full'); playIn(); }
+        break;
+      case 'layout.full':   setState('fs', true); break;
+      case 'layout.lower':  setState('fs', false); break;
+      case 'layout.toggle': setState('fs', !isFs()); break;
+      case 'main.sky':      setState('swap', false); break;
+      case 'main.real':     setState('swap', true); break;
+      case 'main.toggle':   setState('swap', !bar.classList.contains('swap')); break;
+      case 'card.on':       setState('noreal', false); break;
+      case 'card.off':      setState('noreal', true); break;
+      case 'card.toggle':   setState('noreal', !bar.classList.contains('noreal')); break;
+    }
+  }
+  /* Also reachable from OBS "Interact" / a preview console */
+  window.eclipseCommand = command;
   if (window.obsstudio) {
     if (AUTO_ANIM) {
       window.addEventListener('obsSourceVisibleChanged', function (e) {
@@ -537,13 +585,11 @@
     var clickTimer = null;
     window.addEventListener('click', function () {
       clearTimeout(clickTimer);
-      clickTimer = setTimeout(function () {
-        if (bar.classList.contains('on')) playOut(); else playIn();
-      }, 250);
+      clickTimer = setTimeout(function () { command('air.toggle'); }, 250);
     });
     window.addEventListener('dblclick', function () {
       clearTimeout(clickTimer);
-      switchView(function () { bar.classList.toggle('fs'); });
+      command('layout.toggle');
     });
   }
   /* Ensure a show always clears the out state first. */
@@ -552,40 +598,38 @@
 
   /* ===== obs-websocket client: lets Companion drive the widget.
      Browser source URL params: ?obspw=PASSWORD (&obsport=4455)
-     Companion sends: BroadcastCustomEvent {"eventData":{"eclipseLowerThird":"<cmd>"}}
-     Commands: hide · show · showFullscreen · showLower · fullscreen · lower · toggleView
-               showReal · hideReal · toggleReal (corner card on/off)
-               swapViews · realMain · skyMain (which view gets the canvas) */
+     Companion sends: BroadcastCustomEvent {"eventData":{"eclipse":"<command>"}}
+     with any of the commands documented above. */
   var OBS_PW = q.get('obspw') || '';
   var OBS_PORT = q.get('obsport') || '4455';
-  /* ?fs — start directly in the fullscreen layout (dedicated browser source)
-     ?noreal — start with the corner card hidden (still toggleable)
-     ?swap — start with the true-scale view on the canvas and the sky map in
-       the corner card, i.e. the two views already swapped
+  /* Starting state, in the same words as the commands:
+       ?layout=full|lower   ?main=sky|real   ?card=on|off
+     ?fs, ?swap and ?noreal are the older shorthands for ?layout=full,
+     ?main=real and ?card=off, and still work.
      ?noautoanim — see AUTO_ANIM above: disable auto slide on source visibility */
+  ['layout', 'main', 'card'].forEach(function (p) {
+    if (q.has(p)) command(p + '.' + q.get(p));
+  });
   if (q.has('fs')) bar.classList.add('fs');
   if (q.has('noreal')) bar.classList.add('noreal');
   if (q.has('swap')) bar.classList.add('swap');
   /* Preview shortcuts (and OBS "Interact"): R toggles the corner card,
-     S swaps which view is on the canvas */
+     S swaps which view owns the canvas */
   window.addEventListener('keydown', function (e) {
-    if (e.key === 'r' || e.key === 'R') {
-      switchView(function () { bar.classList.toggle('noreal'); });
-    }
-    if (e.key === 's' || e.key === 'S') {
-      switchView(function () { bar.classList.toggle('swap'); });
-    }
+    if (e.key === 'r' || e.key === 'R') command('card.toggle');
+    if (e.key === 's' || e.key === 'S') command('main.toggle');
   });
 
   /* ===== Companion feedback: push widget state into Companion custom
      variables over its HTTP API. Enable with ?companion=HOST[:PORT]
      (port defaults to 8000, Companion's web/API port). Create these
      custom variables in Companion once; the widget then updates them live
-     for button feedbacks and key text ($(custom:eclipse_countdown), …):
-       eclipse_view         fullscreen | lower
-       eclipse_real         on | off        (corner card shown)
-       eclipse_main         sky | real      (which view is on the canvas)
-       eclipse_visible      on | off        (bar shown on air)
+     for button feedbacks and key text ($(custom:eclipse_countdown), …).
+     The first four mirror the command namespaces one for one:
+       eclipse_air          on | off        (on air)
+       eclipse_layout       full | lower
+       eclipse_main         sky | real      (which view owns the canvas)
+       eclipse_card         on | off        (corner card shown)
        eclipse_phase        attente | en_cours | max_passe |
                             sous_horizon | terminee
        eclipse_countdown    e.g. 00:13:41 or 2d 05h 42m
@@ -616,11 +660,14 @@
           '/value?value=' + encodeURIComponent(value),
           { method: 'POST', mode: 'no-cors' }).catch(function () {});
   };
+  /* One variable per command namespace, reporting the value that namespace's
+     commands take — eclipse_layout is 'full' exactly when layout.full is the
+     state, so a button's feedback compares against the word it sends. */
   function pushViewState() {
-    eclipseFeedback('view', bar.classList.contains('fs') ? 'fullscreen' : 'lower');
-    eclipseFeedback('real', bar.classList.contains('noreal') ? 'off' : 'on');
+    eclipseFeedback('air', isOn() ? 'on' : 'off');
+    eclipseFeedback('layout', isFs() ? 'full' : 'lower');
     eclipseFeedback('main', bar.classList.contains('swap') ? 'real' : 'sky');
-    eclipseFeedback('visible', bar.classList.contains('on') ? 'on' : 'off');
+    eclipseFeedback('card', bar.classList.contains('noreal') ? 'off' : 'on');
   }
   new MutationObserver(pushViewState).observe(bar, { attributes: true, attributeFilter: ['class'] });
   pushViewState();
@@ -648,61 +695,9 @@
         }
       } else if (msg.op === 5 && msg.d.eventType === 'CustomEvent') {
         var d = msg.d.eventData || {};
-        if (d.eclipseLowerThird === 'hide') playOut();
-        /* 'on' means the bar is already revealed: skip re-running the
-           entrance animation on a redundant show/showFullscreen. */
-        if (d.eclipseLowerThird === 'show' && !bar.classList.contains('on')) playIn();
-        /* Reveal straight into the fullscreen layout: off air, 'fs' is set
-           before the reveal animation runs, so it never shows the lower-third
-           frame and skips the lower-third<->fullscreen morph entirely. On air
-           in the lower third, it morphs across like 'fullscreen', so one
-           button always lands on "on air, fullscreen" whatever the state. */
-        if (d.eclipseLowerThird === 'showFullscreen') {
-          if (!bar.classList.contains('on')) {
-            bar.classList.add('fs');
-            playIn();
-          } else if (!bar.classList.contains('fs')) {
-            switchView(function () { bar.classList.add('fs'); });
-          }
-        }
-        /* Same for the lower-third layout, mirroring showFullscreen above. */
-        if (d.eclipseLowerThird === 'showLower') {
-          if (!bar.classList.contains('on')) {
-            bar.classList.remove('fs');
-            playIn();
-          } else if (bar.classList.contains('fs')) {
-            switchView(function () { bar.classList.remove('fs'); });
-          }
-        }
-        if (d.eclipseLowerThird === 'fullscreen' && !bar.classList.contains('fs')) {
-          switchView(function () { bar.classList.add('fs'); });
-        }
-        if (d.eclipseLowerThird === 'lower' && bar.classList.contains('fs')) {
-          switchView(function () { bar.classList.remove('fs'); });
-        }
-        if (d.eclipseLowerThird === 'toggleView') {
-          switchView(function () { bar.classList.toggle('fs'); });
-        }
-        /* Corner card on/off (fullscreen only) */
-        if (d.eclipseLowerThird === 'showReal') {
-          switchView(function () { bar.classList.remove('noreal'); });
-        }
-        if (d.eclipseLowerThird === 'hideReal') {
-          switchView(function () { bar.classList.add('noreal'); });
-        }
-        if (d.eclipseLowerThird === 'toggleReal') {
-          switchView(function () { bar.classList.toggle('noreal'); });
-        }
-        /* Which view gets the canvas and which one gets the corner card */
-        if (d.eclipseLowerThird === 'swapViews') {
-          switchView(function () { bar.classList.toggle('swap'); });
-        }
-        if (d.eclipseLowerThird === 'realMain') {
-          switchView(function () { bar.classList.add('swap'); });
-        }
-        if (d.eclipseLowerThird === 'skyMain') {
-          switchView(function () { bar.classList.remove('swap'); });
-        }
+        /* eclipseLowerThird was the key before the widget grew a fullscreen
+           scene; still read, so an old button only needs its command updated */
+        command(d.eclipse || d.eclipseLowerThird);
       }
     };
     ws.onclose = function () { setTimeout(connectOBS, 5000); };

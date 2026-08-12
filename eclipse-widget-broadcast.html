@@ -184,10 +184,13 @@
 
   /* ===== Fullscreen scene (Companion: {"eclipseLowerThird":"toggleView"}) =====
      Not a morph of the lower third: a dedicated full-canvas layout. The sky
-     fills the screen, the Sun/Moon overlap disc rides its real trajectory
-     toward the horizon, and the info blocks float on top. Requires the
-     browser source to cover the full canvas (1920x1080). Toggling the view
-     replays the reveal choreography so the new layout assembles on air. */
+     fills the screen and the info blocks float on top. The scene is framed
+     like a camera: the Sun/Moon pair is held in the middle of whatever the
+     overlay blocks leave free (clear of the countdown block top-right, the
+     ticker at the bottom and the true-scale card bottom-left), and the sky
+     itself pans behind them. Requires the browser source to cover the full
+     canvas (1920x1080). Toggling the view replays the reveal choreography so
+     the new layout assembles on air. */
   #sunpanel { position: relative; }
   #bar.fs { display: block; }
   #bar.fs .rv-sun { position: absolute; inset: 0; flex: none; height: 100vh; }
@@ -201,13 +204,20 @@
   }
   #bar.fs #skychart { display: block; animation: kFadeUp 0.55s ease-out 0.25s backwards; }
   #skychart text { font-variant-numeric: tabular-nums; }
+  /* Camera layers inside the chart: #skypan carries everything tied to sky
+     coordinates (paths, grid, horizon, ground, markers, compass) and takes the
+     full pan; #skyalt holds the altitude labels, which follow the grid
+     vertically but stay pinned to the left edge; the caption/legend layer
+     never moves. 1s linear = the same glide as the discs, so the sky and the
+     discs travel together between the once-per-second updates. */
+  #skypan, #skyalt { transition: transform 1s linear; }
 
-  /* The overlap disc rides the trajectory (left/top driven by JS, 1s linear
+  /* The discs ride the trajectory (left/top driven by JS, 1s linear
      transition = constant glide between the once-per-second updates) */
   #bar.fs #skywrap {
     position: absolute; width: 16vw; height: 16vw;
     margin-left: -8vw; margin-top: -8vw;
-    left: var(--sunX, 50%); top: var(--sunY, 46%);
+    left: var(--sunX, 37.5%); top: var(--sunY, 52%);
     transition: left 1s linear, top 1s linear,
                 width 0.7s cubic-bezier(0.22,1,0.36,1),
                 height 0.7s cubic-bezier(0.22,1,0.36,1),
@@ -219,7 +229,7 @@
   #bar.fs #moonwrap {
     display: block; position: absolute; width: 16vw; height: 16vw;
     margin-left: -8vw; margin-top: -8vw;
-    left: var(--moonX, 50%); top: var(--moonY, 50%);
+    left: var(--moonX, 37.5%); top: var(--moonY, 52%);
     transition: left 1s linear, top 1s linear,
                 width 0.7s cubic-bezier(0.22,1,0.36,1),
                 height 0.7s cubic-bezier(0.22,1,0.36,1),
@@ -708,6 +718,9 @@
     return 'moins d\'une minute';
   }
   function fmtPct(frac) { return (frac * 100).toFixed(1).replace('.', ',') + ' %'; }
+  /* The sky chart draws azimuths past 0°/360° (the camera can pan beyond the
+     trajectory's own span), so labels get folded back into one turn. */
+  function norm360(a) { return ((a % 360) + 360) % 360; }
   function compass(az) {
     var dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
     return dirs[Math.round(az / 22.5) % 16];
@@ -757,17 +770,48 @@
   //  · "zoom"  — from 75 min before first contact: the eclipse evening only;
   //    the Moon disc is placed at its true angular offset from the Sun at
   //    the shared oversized disc scale, so it exactly matches the bite.
-  // Azimuth → x, altitude → y (the sky, facing the Sun).
+  // Azimuth → x, altitude → y (the sky, facing the Sun). L/R/T/YB only set the
+  // scale (how much sky per unit): where the drawing ends up on screen is the
+  // camera's job — it pans the sky so the Sun/Moon pair stays centred in the
+  // area the overlay blocks leave free (see safeCenter).
   var skyUpdate = (function () {
     var svg = $('skychart'), wrap = $('skywrap');
     if (!svg || !wrap) return function () {};
     var moonWrap = $('moonwrap'), moonDisc = $('moondisc');
     var W = 1920, H = 1080, L = 90, R = 90, T = 230, YB = 950;
     var ZOOM_VW = 16, WIDE_VW = 5, BOX = 150; // disc sizes: must match the CSS
+    // The sky is drawn far past the frame so panning never uncovers an edge.
+    var EXT_X = 1400, EXT_Y = 900;
     var tz0 = tC1 - 75 * 60000, tz1 = tC4 + 25 * 60000;
     var dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ });
     var dateKey = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ });
     var mode = '', builtDay = '', x = null, y = null, chartPts = null;
+
+    /* ===== Camera =====
+       Where the Sun/Moon pair is parked on screen: the middle of what the
+       overlay blocks leave free. All values are chart units (the 1920x1080
+       viewBox) and mirror the fullscreen CSS above:
+         · red countdown block  width 46vw, right 0  → free up to 54vw
+         · true-scale card      width 21vw, left 0   → hidden with .noreal
+         · ticker + timeline    76px + 18px, bottom  → free above that
+         · caption + legend     top-left corner      → free below LEG_BOT */
+    var PAD = 26, LEG_BOT = 134;
+    function safeCenter() {
+      var vh = window.innerHeight || H;
+      var l = (elBar.classList.contains('noreal') ? 0 : W * 0.21) + PAD;
+      var r = W * 0.54 - PAD;
+      var t = LEG_BOT + PAD;
+      var b = H - 94 * (H / vh) - PAD;
+      return { x: (l + r) / 2, y: (t + b) / 2 };
+    }
+    // Current pan, kept so a chart rebuild re-applies it to the fresh layers.
+    var panX = 0, panY = 0;
+    function setPan(px, py) {
+      panX = px; panY = py;
+      var gp = svg.querySelector('#skypan'), ga = svg.querySelector('#skyalt');
+      if (gp) gp.style.transform = 'translate(' + px.toFixed(1) + 'px,' + py.toFixed(1) + 'px)';
+      if (ga) ga.style.transform = 'translate(0px,' + py.toFixed(1) + 'px)';
+    }
 
     // Sampling window of the wide view: the current day, sunrise → sunset
     function wideWindow(t) {
@@ -804,13 +848,17 @@
       x = function (az) { return L + (az - azLo) / (azHi - azLo) * (W - L - R); };
       y = function (al) { return T + (altHi - al) / (altHi - altLo) * (YB - T); };
 
-      var xR = W - R, yH = y(0);
-      var s = [];
-      // Altitude gridlines
-      for (var a = 10; a < altHi; a += 10) {
-        s.push('<line x1="' + L + '" y1="' + y(a).toFixed(1) + '" x2="' + xR + '" y2="' + y(a).toFixed(1) +
+      var azAt = function (px) { return azLo + (px - L) / (W - L - R) * (azHi - azLo); };
+
+      var yH = y(0), xA = -EXT_X, xB = W + EXT_X;
+      // Three layers: s pans with the sky, sAlt only vertically (altitude
+      // labels stay at the left edge), sFix never moves (caption + legend).
+      var s = [], sAlt = [], sFix = [];
+      // Altitude gridlines: drawn past the frame, since the sky pans under it
+      for (var a = 10; a <= Math.min(88, altHi + 40); a += 10) {
+        s.push('<line x1="' + xA + '" y1="' + y(a).toFixed(1) + '" x2="' + xB + '" y2="' + y(a).toFixed(1) +
                '" stroke="rgba(255,255,255,0.16)" stroke-width="1" stroke-dasharray="3 7"/>');
-        s.push('<text x="' + (L - 12) + '" y="' + (y(a) + 5).toFixed(1) +
+        sAlt.push('<text x="' + (L - 12) + '" y="' + (y(a) + 5).toFixed(1) +
                '" text-anchor="end" font-size="16" fill="rgba(255,255,255,0.55)">' + a + '°</text>');
       }
       // Paths first, then the semi-transparent ground on top: whatever dips
@@ -834,9 +882,9 @@
         s.push('<polyline points="' + polyPts(zone, 'sHz') +
                '" fill="none" stroke="#e1000f" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>');
       }
-      s.push('<rect x="0" y="' + yH.toFixed(1) + '" width="' + W + '" height="' + (H - yH).toFixed(1) +
+      s.push('<rect x="' + xA + '" y="' + yH.toFixed(1) + '" width="' + (xB - xA) + '" height="' + (H + 2 * EXT_Y) +
              '" fill="rgba(0,0,0,0.35)"/>');
-      s.push('<line x1="0" y1="' + yH.toFixed(1) + '" x2="' + W + '" y2="' + yH.toFixed(1) +
+      s.push('<line x1="' + xA + '" y1="' + yH.toFixed(1) + '" x2="' + xB + '" y2="' + yH.toFixed(1) +
              '" stroke="#fff" stroke-width="3"/>');
       // Contact markers on the Sun's path
       var markers = [
@@ -849,32 +897,42 @@
         var gk = sunMoon(mk.t);
         mk.x = x(gk.sHz.azimuth); mk.y = y(gk.sHz.altitude);
       });
-      // Azimuth ticks under the horizon + compass points in the ground band
+      // Azimuth ticks under the horizon + compass points in the ground band.
+      // The range covers everything the camera can pan into view, not just the
+      // trajectory's own span.
       var azStep = (azHi - azLo) > 80 ? 15 : 5;
-      for (var az = Math.ceil(azLo / azStep) * azStep; az <= azHi; az += azStep) {
+      var azA = Math.max(azAt(xA), -90), azB = Math.min(azAt(xB), 450);
+      for (var az = Math.ceil(azA / azStep) * azStep; az <= azB; az += azStep) {
         s.push('<line x1="' + x(az).toFixed(1) + '" y1="' + yH.toFixed(1) + '" x2="' + x(az).toFixed(1) +
                '" y2="' + (yH + 10).toFixed(1) + '" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>');
         s.push('<text x="' + x(az).toFixed(1) + '" y="' + (yH + 32).toFixed(1) +
-               '" text-anchor="middle" font-size="15" fill="rgba(255,255,255,0.55)">' + az + '°</text>');
+               '" text-anchor="middle" font-size="15" fill="rgba(255,255,255,0.55)">' + norm360(az) + '°</text>');
       }
-      for (var c = 0; c < 16; c++) {
+      for (var c = Math.ceil(azA / 22.5); c * 22.5 <= azB; c++) {
         var caz = c * 22.5;
-        if (caz <= azLo + 1 || caz >= azHi - 1) continue;
         var cx = x(caz);
         if (m === 'zoom' &&
             markers.some(function (mk) { return !mk.above && Math.abs(mk.x - cx) < 110; })) continue;
         s.push('<text x="' + cx.toFixed(1) + '" y="' + (yH + 68).toFixed(1) +
-               '" text-anchor="middle" font-size="24" font-weight="900" fill="rgba(255,255,255,0.85)">' + compass(caz) + '</text>');
+               '" text-anchor="middle" font-size="24" font-weight="900" fill="rgba(255,255,255,0.85)">' +
+               compass(norm360(caz)) + '</text>');
       }
-      // Caption + legend, right-aligned in the sky under the red block
+      // Caption + legend: top-left corner, the one part of the canvas neither
+      // the overlay blocks nor the discs ever reach. It doesn't pan with the
+      // sky, so a halo keeps it readable over whatever slides underneath.
       var capDate = m === 'zoom' ? new Date(tPeak) : new Date(t);
-      s.push('<text x="' + xR + '" y="436" text-anchor="end" font-size="18" font-weight="900" letter-spacing="1" ' +
-             'fill="rgba(255,255,255,0.85)">TRAJECTOIRE DANS LE CIEL · ' +
+      var halo = ' stroke="#10173a" stroke-width="4" stroke-linejoin="round" paint-order="stroke"';
+      sFix.push('<text x="' + L + '" y="84" font-size="18" font-weight="900" letter-spacing="1" ' +
+             'fill="rgba(255,255,255,0.9)"' + halo + '>TRAJECTOIRE DANS LE CIEL · ' +
              dayFmt.format(capDate).toUpperCase() + '</text>');
-      s.push('<line x1="' + (xR - 270) + '" y1="466" x2="' + (xR - 230) + '" y2="466" stroke="#ffd257" stroke-width="6" stroke-linecap="round"/>');
-      s.push('<text x="' + (xR - 218) + '" y="472" font-size="16" font-weight="700" fill="#fff">SOLEIL</text>');
-      s.push('<line x1="' + (xR - 115) + '" y1="466" x2="' + (xR - 75) + '" y2="466" stroke="rgba(255,255,255,0.8)" stroke-width="3.5" stroke-dasharray="9 8"/>');
-      s.push('<text x="' + (xR - 63) + '" y="472" font-size="16" font-weight="700" fill="#fff">LUNE</text>');
+      sFix.push('<line x1="' + L + '" y1="' + (LEG_BOT - 16) + '" x2="' + (L + 40) + '" y2="' + (LEG_BOT - 16) +
+             '" stroke="#ffd257" stroke-width="6" stroke-linecap="round"/>');
+      sFix.push('<text x="' + (L + 52) + '" y="' + (LEG_BOT - 10) + '" font-size="16" font-weight="700" fill="#fff"' +
+             halo + '>SOLEIL</text>');
+      sFix.push('<line x1="' + (L + 148) + '" y1="' + (LEG_BOT - 16) + '" x2="' + (L + 188) + '" y2="' + (LEG_BOT - 16) +
+             '" stroke="rgba(255,255,255,0.8)" stroke-width="3.5" stroke-dasharray="9 8"/>');
+      sFix.push('<text x="' + (L + 200) + '" y="' + (LEG_BOT - 10) + '" font-size="16" font-weight="700" fill="#fff"' +
+             halo + '>LUNE</text>');
       if (m === 'zoom') {
         markers.forEach(function (mk) {
           s.push('<circle cx="' + mk.x.toFixed(1) + '" cy="' + mk.y.toFixed(1) +
@@ -900,7 +958,9 @@
                '" text-anchor="middle" font-size="17" fill="rgba(255,255,255,0.8)">' +
                fmtTS(tC1) + ' – ' + fmtTS(tC4) + '</text>');
       }
-      return s.join('');
+      return '<g id="skypan">' + s.join('') + '</g>' +
+             '<g id="skyalt">' + sAlt.join('') + '</g>' +
+             '<g id="skyfix">' + sFix.join('') + '</g>';
     }
 
     function rebuild(m, t) {
@@ -910,11 +970,15 @@
       var html;
       try { html = buildChart(m, t); } catch (e) { return; }
       elBar.classList.toggle('wide', m === 'wide');
-      if (first) { svg.innerHTML = html; return; }
+      // The fresh layers start where the camera already is, so a rebuild
+      // never slides the sky back to the origin first.
+      if (first) { svg.innerHTML = html; setPan(panX, panY); return; }
       // Dip-to-rebuild: quick fade while the discs glide to the new scale
       svg.style.transition = 'opacity 0.3s ease';
       svg.style.opacity = 0;
-      setTimeout(function () { svg.innerHTML = html; svg.style.opacity = 1; }, 320);
+      setTimeout(function () {
+        svg.innerHTML = html; setPan(panX, panY); svg.style.opacity = 1;
+      }, 320);
     }
 
     var rvSun = $('rvsun'), rvMoon = $('rvmoon'), rvGlow = $('rvglow'),
@@ -976,40 +1040,48 @@
       if (m !== mode || (m === 'wide' && dateKey.format(new Date(t)) !== builtDay)) rebuild(m, t);
       updateRealView(g, ob || 0);
       if (!x) return;
-      var sx = x(g.sHz.azimuth), sy = y(g.sHz.altitude);
-      wrap.style.setProperty('--sunX', (sx / W * 100).toFixed(2) + '%');
-      wrap.style.setProperty('--sunY', (sy / H * 100).toFixed(2) + '%');
-      if (!moonWrap || !moonDisc) return;
-      moonDisc.setAttribute('r', ((g.rMoon / g.rSun) * SUN_PX).toFixed(2));
-      var mxPct, myPct;
-      if (m === 'zoom') {
-        // True angular offset from the Sun at the shared oversized disc
-        // scale — the same math as the bite mask, so the disc always sits
-        // exactly over the bite.
-        var degPerRad = 180 / Math.PI;
-        var pxPerDeg = SUN_PX / (g.rSun * degPerRad);
-        var dAz = g.mHz.azimuth - g.sHz.azimuth;
-        if (dAz > 180) dAz -= 360; if (dAz < -180) dAz += 360;
-        var dx = dAz * Math.cos(g.sHz.altitude * Math.PI / 180) * pxPerDeg;
-        var dy = -(g.mHz.altitude - g.sHz.altitude) * pxPerDeg;
-        var aspect = (window.innerWidth || W) / (window.innerHeight || H);
-        mxPct = sx / W * 100 + dx / BOX * ZOOM_VW;
-        myPct = sy / H * 100 + dy / BOX * ZOOM_VW * aspect;
-      } else {
-        // Own live position on the sky map. The discs are oversized, so
-        // keep them from overlapping while the real bodies are still far
-        // apart: clamp the Moon to "just touching" along the true bearing.
-        var mx = x(g.mHz.azimuth), my = y(g.mHz.altitude);
-        var ddx = mx - sx, ddy = my - sy;
-        var d = Math.sqrt(ddx * ddx + ddy * ddy);
-        var discU = WIDE_VW / 100 * W;
-        var minD = discU * (SUN_PX / BOX) * (1 + g.rMoon / g.rSun) + 4;
-        if (d > 0 && d < minD) { ddx *= minD / d; ddy *= minD / d; }
-        mxPct = (sx + ddx) / W * 100;
-        myPct = (sy + ddy) / H * 100;
+      // Both discs, in chart units, before the camera moves anything.
+      var sx = x(g.sHz.azimuth), sy = y(g.sHz.altitude), mx = sx, my = sy;
+      if (moonWrap && moonDisc) {
+        moonDisc.setAttribute('r', ((g.rMoon / g.rSun) * SUN_PX).toFixed(2));
+        if (m === 'zoom') {
+          // True angular offset from the Sun at the shared oversized disc
+          // scale — the same math as the bite mask, so the disc always sits
+          // exactly over the bite.
+          var degPerRad = 180 / Math.PI;
+          var pxPerDeg = SUN_PX / (g.rSun * degPerRad);
+          var dAz = g.mHz.azimuth - g.sHz.azimuth;
+          if (dAz > 180) dAz -= 360; if (dAz < -180) dAz += 360;
+          var dx = dAz * Math.cos(g.sHz.altitude * Math.PI / 180) * pxPerDeg;
+          var dy = -(g.mHz.altitude - g.sHz.altitude) * pxPerDeg;
+          var aspect = (window.innerWidth || W) / (window.innerHeight || H);
+          mx = sx + dx / BOX * ZOOM_VW * W / 100;
+          my = sy + dy / BOX * ZOOM_VW * aspect * H / 100;
+        } else {
+          // Own live position on the sky map. The discs are oversized, so
+          // keep them from overlapping while the real bodies are still far
+          // apart: clamp the Moon to "just touching" along the true bearing.
+          var mrx = x(g.mHz.azimuth), mry = y(g.mHz.altitude);
+          var ddx = mrx - sx, ddy = mry - sy;
+          var d = Math.sqrt(ddx * ddx + ddy * ddy);
+          var discU = WIDE_VW / 100 * W;
+          var minD = discU * (SUN_PX / BOX) * (1 + g.rMoon / g.rSun) + 4;
+          if (d > 0 && d < minD) { ddx *= minD / d; ddy *= minD / d; }
+          mx = sx + ddx; my = sy + ddy;
+        }
       }
-      moonWrap.style.setProperty('--moonX', mxPct.toFixed(2) + '%');
-      moonWrap.style.setProperty('--moonY', myPct.toFixed(2) + '%');
+      // Camera: pan the sky so the pair sits in the middle of the free area,
+      // instead of wherever on the canvas its sky coordinates happen to fall
+      // (under the countdown block, on the legend, behind the ticker…). It
+      // stops at the horizon rather than following the Sun underground: once
+      // set, the pair sinks below a centred horizon line.
+      var c = safeCenter();
+      setPan(c.x - (sx + mx) / 2, Math.max(c.y - (sy + my) / 2, c.y - y(0)));
+      wrap.style.setProperty('--sunX', ((sx + panX) / W * 100).toFixed(2) + '%');
+      wrap.style.setProperty('--sunY', ((sy + panY) / H * 100).toFixed(2) + '%');
+      if (!moonWrap || !moonDisc) return;
+      moonWrap.style.setProperty('--moonX', ((mx + panX) / W * 100).toFixed(2) + '%');
+      moonWrap.style.setProperty('--moonY', ((my + panY) / H * 100).toFixed(2) + '%');
       var malt = g.mHz.altitude;
       moonWrap.style.opacity = malt < 0 ? Math.max(0, 1 + malt / 1.2).toFixed(2) : 1;
     };

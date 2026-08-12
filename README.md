@@ -48,7 +48,8 @@ same directory.
 | `?lon=N` | Observer longitude in degrees (default `2.3522`, Paris). |
 | `?alt=N` | Observer elevation in meters (default `35`). |
 | `?fs` | Start directly in the fullscreen layout (use on a dedicated browser source). |
-| `?noreal` | Start with the true-scale inset "real size" card hidden (still toggleable). |
+| `?noreal` | Start with the corner card hidden (still toggleable). |
+| `?swap` | Start with the two fullscreen views already swapped: the true-scale view on the canvas, the sky map in the corner card. |
 | `?obspw=PASSWORD` | obs-websocket authentication password. |
 | `?obsport=PORT` | obs-websocket port (default `4455`). |
 | `?companion=HOST[:PORT]` | Enables pushing live state to a Bitfocus Companion instance's custom-variable HTTP API (port defaults to `8000`, Companion's web/API port). |
@@ -80,16 +81,32 @@ Broadcast Custom Event** action.
 | `fullscreen` | Morph from the lower-third into the fullscreen sky scene. |
 | `lower` | Morph back from fullscreen to the lower-third. |
 | `toggleView` | Toggle between lower-third and fullscreen. |
-| `showReal` | Show the true-scale inset card (fullscreen layout only). |
-| `hideReal` | Hide the true-scale inset card. |
-| `toggleReal` | Toggle the true-scale inset card. |
+| `showReal` | Show the corner card (fullscreen layout only). |
+| `hideReal` | Hide the corner card. |
+| `toggleReal` | Toggle the corner card. |
+| `swapViews` | Swap the two fullscreen views: whichever of the sky map and the true-scale view is on the canvas moves into the corner card, and vice versa. |
+| `realMain` | Put the true-scale view on the canvas (sky map into the card). No-op if it is already there. |
+| `skyMain` | Put the sky map on the canvas (true-scale view into the card) — the default. |
+
+The fullscreen scene draws the same eclipse two ways, and `swapViews` decides which one
+gets the canvas and which one gets the corner card at bottom-left:
+
+- the **sky map** — trajectories, horizon, contact markers, with the Sun/Moon discs
+  oversized so they read on air;
+- the **true-scale view** — the two bodies at their real apparent size, so the gap
+  between them (and the bite out of the Sun) is the one you would actually see.
+
+Both keep their own live camera in either place, so the Sun/Moon pair sits in the same
+part of the frame before and after a swap, and `toggleReal` still hides the corner card —
+whichever of the two is currently in it.
 
 Transitions use the View Transitions API where available (Chromium 111+ / modern OBS
 CEF), falling back to a scripted reveal on older browsers.
 
 ### Manual / preview control (outside Companion)
 
-- **R** — toggle the true-scale inset card (also usable via OBS "Interact").
+- **R** — toggle the corner card (also usable via OBS "Interact").
+- **S** — swap the two fullscreen views (same as `swapViews`).
 - **Click** — toggle show/hide (preview only, when `window.obsstudio` isn't present).
 - **Double-click** — toggle the fullscreen morph (preview only).
 
@@ -107,7 +124,8 @@ for button feedbacks and key text (e.g. `$(custom:eclipse_countdown)`):
 | Variable | Values | Description |
 |---|---|---|
 | `eclipse_view` | `fullscreen` \| `lower` | Current layout. |
-| `eclipse_real` | `on` \| `off` | Whether the true-scale inset card is shown. |
+| `eclipse_real` | `on` \| `off` | Whether the corner card is shown. |
+| `eclipse_main` | `sky` \| `real` | Which view is on the canvas: the sky map, or the true-scale one. |
 | `eclipse_visible` | `on` \| `off` | Whether the bar is currently on air. |
 | `eclipse_phase` | `attente` \| `en_cours` \| `max_passe` \| `sous_horizon` \| `terminee` | Eclipse phase: waiting for first contact, in progress, past maximum, sun set but eclipse ongoing, or finished. |
 | `eclipse_countdown` | e.g. `00:13:41` or `2d 05h 42m` | Countdown to the next milestone shown in the widget. |

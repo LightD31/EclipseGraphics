@@ -197,6 +197,26 @@
   #bar.fs #sunpanel { position: absolute; inset: 0; }
   #bar.fs #right { position: absolute; inset: 0; }
 
+  /* The sky map as one block: #skyscene is its frame (the whole canvas, or
+     the corner card once swapped), #skyinner keeps viewport-sized geometry so
+     the whole map — chart, discs and their percentage positions — can be
+     scaled as a unit instead of re-laid out. In the lower third the panel is
+     202px square and #skyinner just centres the disc, as before. */
+  #skyscene { position: absolute; inset: 0; }
+  #skyinner {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Card header, mirroring the true-scale card's; only shown once swapped */
+  #skyhead {
+    display: none; position: absolute; left: 0; right: 0; top: 0;
+    align-items: baseline; justify-content: space-between;
+    padding: 10px 14px 4px; color: #fff; pointer-events: none;
+    background: linear-gradient(rgba(8,12,36,0.92), rgba(8,12,36,0));
+  }
+  #skyhead b { font-size: 17px; font-weight: 900; letter-spacing: 0.5px; }
+  #skyhead span { font-size: 15px; color: rgba(255,255,255,0.65); }
+
   /* Sky chart behind the disc: trajectories, horizon, contact markers */
   #skychart {
     display: none; position: absolute; inset: 0;
@@ -251,7 +271,9 @@
     flex-direction: column;
   }
   #bar.fs #realview { display: flex; animation: kFadeUp 0.5s ease-out 0.5s backwards; }
-  #bar.fs.noreal #realview { display: none; }
+  /* ?noreal / toggleReal hides the corner card — whichever view is in it */
+  #bar.fs.noreal:not(.swap) #realview { display: none; }
+  #bar.fs.swap.noreal #skyscene { display: none; }
   #rvhead {
     display: flex; align-items: baseline; justify-content: space-between;
     padding: 10px 14px 4px; color: #fff;
@@ -264,6 +286,46 @@
   #rvsvg circle, #rvsvg rect {
     transition: cx 1s linear, cy 1s linear, r 1s linear, y 1s linear, height 1s linear;
   }
+
+  /* ===== Swapped scene (Companion: {"eclipseLowerThird":"swapViews"}) =====
+     The two renderers trade places: the true-scale view takes the canvas and
+     the sky map shrinks into the corner card the true-scale view was in.
+     Scaling #skyinner (rather than resizing it) keeps the map's geometry
+     intact: the discs are sized in vw and placed in %, so they ride along. */
+  #bar.fs.swap #skyscene {
+    inset: auto; left: 0; bottom: 94px; width: 21vw; height: 21vh;
+    overflow: hidden;
+    /* above the true-scale canvas, whose ground band would cover the card */
+    z-index: 2;
+    background: rgba(8,12,36,0.88);
+    border: 1px solid rgba(255,255,255,0.22);
+    animation: kFadeUp 0.5s ease-out 0.5s backwards;
+  }
+  #bar.fs.swap #skyinner {
+    inset: auto; left: 0; top: 0; width: 100vw; height: 100vh;
+    transform: scale(0.21); transform-origin: 0 0;
+  }
+  /* Chart lettering is unreadable at card scale; the header names the card */
+  #bar.fs.swap #skychart text { display: none; }
+  #bar.fs.swap #skyhead { display: flex; }
+
+  /* True-scale view on the canvas: it fills the width and crops the height
+     (slice) instead of fitting a square card, and its head reads as the
+     scene's caption, in the top-left corner the sky map's caption uses. */
+  #bar.fs.swap #realview {
+    inset: 0; width: auto;
+    background: transparent; border: none;
+    animation: kFadeUp 0.55s ease-out 0.25s backwards;
+  }
+  /* Sized in vw like the sky map's own caption (which scales with the chart's
+     viewBox), so it keeps clear of the strap on a smaller browser source */
+  #bar.fs.swap #rvhead {
+    justify-content: flex-start; gap: 1.15vw;
+    padding: 1.6vw 0 0 4.7vw;
+  }
+  #bar.fs.swap #rvhead b { font-size: 1.35vw; letter-spacing: 1px; }
+  #bar.fs.swap #rvhead span { font-size: 1.05vw; }
+  #bar.fs.swap #rvsvg { flex: 1 1 auto; height: auto; min-height: 0; }
 
   /* White strap: top-right corner */
   #bar.fs .rv-strap { position: absolute; top: 0; right: 0; width: auto; max-width: none; }
@@ -294,6 +356,8 @@
      Browsers without support simply ignore these properties (the JS falls
      back to replaying the reveal choreography instead). */
   #sunpanel  { view-transition-name: vt-panel; }
+  #skyscene  { view-transition-name: vt-sky; }
+  #realview  { view-transition-name: vt-real; }
   #skywrap   { view-transition-name: vt-sun; }
   #moonwrap  { view-transition-name: vt-moon; }
   #strap     { view-transition-name: vt-strap; }
@@ -321,6 +385,8 @@
 <div id="bar">
   <div class="rv rv-sun">
   <div id="sunpanel">
+    <div id="skyscene">
+    <div id="skyinner">
     <svg id="skychart" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true"></svg>
     <div id="skywrap">
       <div id="corona"></div>
@@ -350,6 +416,9 @@
         </defs>
         <circle id="moondisc" cx="0" cy="0" r="63.9" fill="url(#moonGrad)" stroke="rgba(255,255,255,0.4)" stroke-width="1.2"/>
       </svg>
+    </div>
+    </div>
+    <div id="skyhead" aria-hidden="true"><b>TRAJECTOIRE</b><span id="skysub">–</span></div>
     </div>
     <div id="realview" aria-hidden="true">
       <div id="rvhead"><b>TAILLE RÉELLE</b><span id="rvfov">–</span></div>
@@ -449,6 +518,54 @@
       playIn();
     }
   }
+
+  /* ===== Command vocabulary =====
+     Every command reads <property>.<value>: one namespace per thing the
+     widget can be, .toggle on each, and the values are the ones the matching
+     Companion variable reports back (eclipse_layout, eclipse_main, …), so a
+     button's command and its feedback compare against the same word.
+       air     on | off | toggle      on air, or parked off-screen
+       layout  full | lower | toggle  which layout
+       main    sky | real | toggle    which view owns the canvas (fullscreen)
+       card    on | off | toggle      the corner card
+     air.on.full / air.on.lower land on air in a named layout in one step:
+     off air they set the layout before revealing, so the other layout is
+     never on screen and there is no morph to sit through; already on air
+     they morph across. Everything below — Companion, the preview clicks and
+     the keyboard shortcuts — goes through command(), so there is one path
+     per state change and no second implementation to keep in step. */
+  function isOn() { return bar.classList.contains('on'); }
+  function isFs() { return bar.classList.contains('fs'); }
+  function setState(name, want) {
+    if (bar.classList.contains(name) === want) return;
+    /* Off air there is nothing on screen to morph: set it straight, which
+       also keeps the no-View-Transitions fallback from revealing the bar. */
+    if (isOn()) switchView(function () { bar.classList.toggle(name, want); });
+    else bar.classList.toggle(name, want);
+  }
+  function command(cmd) {
+    switch (cmd) {
+      case 'air.on':     if (!isOn()) playIn(); break;
+      case 'air.off':    if (isOn()) playOut(); break;
+      case 'air.toggle': if (isOn()) playOut(); else playIn(); break;
+      case 'air.on.full':
+      case 'air.on.lower':
+        if (isOn()) setState('fs', cmd === 'air.on.full');
+        else { bar.classList.toggle('fs', cmd === 'air.on.full'); playIn(); }
+        break;
+      case 'layout.full':   setState('fs', true); break;
+      case 'layout.lower':  setState('fs', false); break;
+      case 'layout.toggle': setState('fs', !isFs()); break;
+      case 'main.sky':      setState('swap', false); break;
+      case 'main.real':     setState('swap', true); break;
+      case 'main.toggle':   setState('swap', !bar.classList.contains('swap')); break;
+      case 'card.on':       setState('noreal', false); break;
+      case 'card.off':      setState('noreal', true); break;
+      case 'card.toggle':   setState('noreal', !bar.classList.contains('noreal')); break;
+    }
+  }
+  /* Also reachable from OBS "Interact" / a preview console */
+  window.eclipseCommand = command;
   if (window.obsstudio) {
     if (AUTO_ANIM) {
       window.addEventListener('obsSourceVisibleChanged', function (e) {
@@ -468,13 +585,11 @@
     var clickTimer = null;
     window.addEventListener('click', function () {
       clearTimeout(clickTimer);
-      clickTimer = setTimeout(function () {
-        if (bar.classList.contains('on')) playOut(); else playIn();
-      }, 250);
+      clickTimer = setTimeout(function () { command('air.toggle'); }, 250);
     });
     window.addEventListener('dblclick', function () {
       clearTimeout(clickTimer);
-      switchView(function () { bar.classList.toggle('fs'); });
+      command('layout.toggle');
     });
   }
   /* Ensure a show always clears the out state first. */
@@ -483,31 +598,38 @@
 
   /* ===== obs-websocket client: lets Companion drive the widget.
      Browser source URL params: ?obspw=PASSWORD (&obsport=4455)
-     Companion sends: BroadcastCustomEvent {"eventData":{"eclipseLowerThird":"<cmd>"}}
-     Commands: hide · show · showFullscreen · showLower · fullscreen · lower · toggleView
-               showReal · hideReal · toggleReal (true-scale inset card) */
+     Companion sends: BroadcastCustomEvent {"eventData":{"eclipse":"<command>"}}
+     with any of the commands documented above. */
   var OBS_PW = q.get('obspw') || '';
   var OBS_PORT = q.get('obsport') || '4455';
-  /* ?fs — start directly in the fullscreen layout (dedicated browser source)
-     ?noreal — start with the true-scale inset card hidden (still toggleable)
+  /* Starting state, in the same words as the commands:
+       ?layout=full|lower   ?main=sky|real   ?card=on|off
+     ?fs, ?swap and ?noreal are the older shorthands for ?layout=full,
+     ?main=real and ?card=off, and still work.
      ?noautoanim — see AUTO_ANIM above: disable auto slide on source visibility */
+  ['layout', 'main', 'card'].forEach(function (p) {
+    if (q.has(p)) command(p + '.' + q.get(p));
+  });
   if (q.has('fs')) bar.classList.add('fs');
   if (q.has('noreal')) bar.classList.add('noreal');
-  /* Preview shortcut (and OBS "Interact"): R toggles the true-scale card */
+  if (q.has('swap')) bar.classList.add('swap');
+  /* Preview shortcuts (and OBS "Interact"): R toggles the corner card,
+     S swaps which view owns the canvas */
   window.addEventListener('keydown', function (e) {
-    if (e.key === 'r' || e.key === 'R') {
-      switchView(function () { bar.classList.toggle('noreal'); });
-    }
+    if (e.key === 'r' || e.key === 'R') command('card.toggle');
+    if (e.key === 's' || e.key === 'S') command('main.toggle');
   });
 
   /* ===== Companion feedback: push widget state into Companion custom
      variables over its HTTP API. Enable with ?companion=HOST[:PORT]
      (port defaults to 8000, Companion's web/API port). Create these
      custom variables in Companion once; the widget then updates them live
-     for button feedbacks and key text ($(custom:eclipse_countdown), …):
-       eclipse_view         fullscreen | lower
-       eclipse_real         on | off        (true-scale inset card)
-       eclipse_visible      on | off        (bar shown on air)
+     for button feedbacks and key text ($(custom:eclipse_countdown), …).
+     The first four mirror the command namespaces one for one:
+       eclipse_air          on | off        (on air)
+       eclipse_layout       full | lower
+       eclipse_main         sky | real      (which view owns the canvas)
+       eclipse_card         on | off        (corner card shown)
        eclipse_phase        attente | en_cours | max_passe |
                             sous_horizon | terminee
        eclipse_countdown    e.g. 00:13:41 or 2d 05h 42m
@@ -538,10 +660,14 @@
           '/value?value=' + encodeURIComponent(value),
           { method: 'POST', mode: 'no-cors' }).catch(function () {});
   };
+  /* One variable per command namespace, reporting the value that namespace's
+     commands take — eclipse_layout is 'full' exactly when layout.full is the
+     state, so a button's feedback compares against the word it sends. */
   function pushViewState() {
-    eclipseFeedback('view', bar.classList.contains('fs') ? 'fullscreen' : 'lower');
-    eclipseFeedback('real', bar.classList.contains('noreal') ? 'off' : 'on');
-    eclipseFeedback('visible', bar.classList.contains('on') ? 'on' : 'off');
+    eclipseFeedback('air', isOn() ? 'on' : 'off');
+    eclipseFeedback('layout', isFs() ? 'full' : 'lower');
+    eclipseFeedback('main', bar.classList.contains('swap') ? 'real' : 'sky');
+    eclipseFeedback('card', bar.classList.contains('noreal') ? 'off' : 'on');
   }
   new MutationObserver(pushViewState).observe(bar, { attributes: true, attributeFilter: ['class'] });
   pushViewState();
@@ -569,51 +695,9 @@
         }
       } else if (msg.op === 5 && msg.d.eventType === 'CustomEvent') {
         var d = msg.d.eventData || {};
-        if (d.eclipseLowerThird === 'hide') playOut();
-        /* 'on' means the bar is already revealed: skip re-running the
-           entrance animation on a redundant show/showFullscreen. */
-        if (d.eclipseLowerThird === 'show' && !bar.classList.contains('on')) playIn();
-        /* Reveal straight into the fullscreen layout: off air, 'fs' is set
-           before the reveal animation runs, so it never shows the lower-third
-           frame and skips the lower-third<->fullscreen morph entirely. On air
-           in the lower third, it morphs across like 'fullscreen', so one
-           button always lands on "on air, fullscreen" whatever the state. */
-        if (d.eclipseLowerThird === 'showFullscreen') {
-          if (!bar.classList.contains('on')) {
-            bar.classList.add('fs');
-            playIn();
-          } else if (!bar.classList.contains('fs')) {
-            switchView(function () { bar.classList.add('fs'); });
-          }
-        }
-        /* Same for the lower-third layout, mirroring showFullscreen above. */
-        if (d.eclipseLowerThird === 'showLower') {
-          if (!bar.classList.contains('on')) {
-            bar.classList.remove('fs');
-            playIn();
-          } else if (bar.classList.contains('fs')) {
-            switchView(function () { bar.classList.remove('fs'); });
-          }
-        }
-        if (d.eclipseLowerThird === 'fullscreen' && !bar.classList.contains('fs')) {
-          switchView(function () { bar.classList.add('fs'); });
-        }
-        if (d.eclipseLowerThird === 'lower' && bar.classList.contains('fs')) {
-          switchView(function () { bar.classList.remove('fs'); });
-        }
-        if (d.eclipseLowerThird === 'toggleView') {
-          switchView(function () { bar.classList.toggle('fs'); });
-        }
-        /* True-scale inset card on/off (fullscreen only) */
-        if (d.eclipseLowerThird === 'showReal') {
-          switchView(function () { bar.classList.remove('noreal'); });
-        }
-        if (d.eclipseLowerThird === 'hideReal') {
-          switchView(function () { bar.classList.add('noreal'); });
-        }
-        if (d.eclipseLowerThird === 'toggleReal') {
-          switchView(function () { bar.classList.toggle('noreal'); });
-        }
+        /* eclipseLowerThird was the key before the widget grew a fullscreen
+           scene; still read, so an old button only needs its command updated */
+        command(d.eclipse || d.eclipseLowerThird);
       }
     };
     ws.onclose = function () { setTimeout(connectOBS, 5000); };
@@ -773,11 +857,11 @@
   // Azimuth → x, altitude → y (the sky, facing the Sun). L/R/T/YB only set the
   // scale (how much sky per unit): where the drawing ends up on screen is the
   // camera's job — it pans the sky so the Sun/Moon pair stays centred in the
-  // area the overlay blocks leave free (see safeCenter).
+  // area the overlay blocks leave free (see safeBox).
   var skyUpdate = (function () {
     var svg = $('skychart'), wrap = $('skywrap');
     if (!svg || !wrap) return function () {};
-    var moonWrap = $('moonwrap'), moonDisc = $('moondisc');
+    var moonWrap = $('moonwrap'), moonDisc = $('moondisc'), elSkySub = $('skysub');
     var W = 1920, H = 1080, L = 90, R = 90, T = 230, YB = 950;
     var ZOOM_VW = 16, WIDE_VW = 5, BOX = 150; // disc sizes: must match the CSS
     // The sky is drawn far past the frame so panning never uncovers an edge.
@@ -796,15 +880,18 @@
          · ticker + timeline    76px + 18px, bottom  → free above that
          · caption + legend     top-left corner      → free below LEG_BOT
        hor is how low the horizon line may sit and still show its azimuth
-       ticks (+32) and compass points (+68) above the ticker. */
+       ticks (+32) and compass points (+68) above the ticker. Pass whole for
+       the sky map once it is the corner card: nothing overlays a card, so the
+       map frames itself in its full box. The true-scale view reads the same
+       box when it takes the canvas, so swapping doesn't jump the pair. */
     var PAD = 26, LEG_BOT = 134;
-    function safeBox() {
+    function safeBox(whole) {
       var vh = window.innerHeight || H;
-      var l = (elBar.classList.contains('noreal') ? 0 : W * 0.21) + PAD;
-      var r = W * 0.54 - PAD;
-      var t = LEG_BOT + PAD;
-      var b = H - 94 * (H / vh) - PAD;
-      return { t: t, b: b, x: (l + r) / 2, y: (t + b) / 2, hor: b - 60 };
+      var l = whole ? PAD : (elBar.classList.contains('noreal') ? 0 : W * 0.21) + PAD;
+      var r = (whole ? W : W * 0.54) - PAD;
+      var t = whole ? PAD : LEG_BOT + PAD;
+      var b = (whole ? H : H - 94 * (H / vh)) - PAD;
+      return { l: l, r: r, t: t, b: b, x: (l + r) / 2, y: (t + b) / 2, hor: b - 60 };
     }
     // Current pan, kept so a chart rebuild re-applies it to the fresh layers.
     var panX = 0, panY = 0;
@@ -923,10 +1010,13 @@
       // the overlay blocks nor the discs ever reach. It doesn't pan with the
       // sky, so a halo keeps it readable over whatever slides underneath.
       var capDate = m === 'zoom' ? new Date(tPeak) : new Date(t);
+      var capDay = dayFmt.format(capDate).toUpperCase();
+      // Same date on the card header, for when the map is the corner card and
+      // its own lettering is too small to read.
+      if (elSkySub) elSkySub.textContent = capDay;
       var halo = ' stroke="#10173a" stroke-width="4" stroke-linejoin="round" paint-order="stroke"';
       sFix.push('<text x="' + L + '" y="84" font-size="18" font-weight="900" letter-spacing="1" ' +
-             'fill="rgba(255,255,255,0.9)"' + halo + '>TRAJECTOIRE DANS LE CIEL · ' +
-             dayFmt.format(capDate).toUpperCase() + '</text>');
+             'fill="rgba(255,255,255,0.9)"' + halo + '>TRAJECTOIRE DANS LE CIEL · ' + capDay + '</text>');
       sFix.push('<line x1="' + L + '" y1="' + (LEG_BOT - 16) + '" x2="' + (L + 40) + '" y2="' + (LEG_BOT - 16) +
              '" stroke="#ffd257" stroke-width="6" stroke-linecap="round"/>');
       sFix.push('<text x="' + (L + 52) + '" y="' + (LEG_BOT - 10) + '" font-size="16" font-weight="700" fill="#fff"' +
@@ -983,28 +1073,59 @@
       }, 320);
     }
 
-    var rvSun = $('rvsun'), rvMoon = $('rvmoon'), rvGlow = $('rvglow'),
+    var rvSvg = $('rvsvg'),
+        rvSun = $('rvsun'), rvMoon = $('rvmoon'), rvGlow = $('rvglow'),
         rvGround = $('rvground'), rvHor = $('rvhor'), rvFov = $('rvfov'),
         rvSunPath = $('rvsunpath'), rvMoonPath = $('rvmoonpath');
+    var rvSliced = null;
 
-    // True-scale inset: real apparent sizes, camera centered between the two
-    // bodies, field of view auto-zoomed to keep both in frame.
+    // True-scale view: real apparent sizes, camera centered between the two
+    // bodies, field of view auto-zoomed to keep both in frame. In the corner
+    // card that is a square that fits (meet) around a centred pair; once
+    // swapped onto the canvas it slices instead — filling the width, cropping
+    // the height — and the pair moves into the same overlay-free column the
+    // sky camera parks it in, so toggling doesn't jump it across the screen.
     function updateRealView(g, ob) {
       if (!rvSun || !rvMoon) return;
+      var swap = elBar.classList.contains('swap');
+      if (swap !== rvSliced) {
+        rvSliced = swap;
+        rvSvg.setAttribute('preserveAspectRatio', swap ? 'xMidYMid slice' : 'xMidYMid meet');
+      }
       var degPerRad = 180 / Math.PI;
       var rS = g.rSun * degPerRad, rM = g.rMoon * degPerRad;
       var sep = g.sep * degPerRad;
-      var fov = Math.max(1.7, (sep + 2 * rS) * 1.35);
-      var s = 500 / fov;
       var dAzC = g.mHz.azimuth - g.sHz.azimuth;
       if (dAzC > 180) dAzC -= 360; if (dAzC < -180) dAzC += 360;
       var azC = g.sHz.azimuth + dAzC / 2;
       var altC = (g.sHz.altitude + g.mHz.altitude) / 2;
       var cosA = Math.cos(altC * Math.PI / 180);
+      // Card: the pair centred in a square that fits the field around it.
+      var cx = 250, cy = 250, s = 500 / Math.max(1.7, (sep + 2 * rS) * 1.35);
+      var half = 250;
+      if (swap) {
+        // Canvas: the pair is framed inside the overlay-free area instead —
+        // as large as it goes with both discs clear of the countdown block,
+        // the corner card and the ticker. Far apart they shrink to fit, which
+        // is the true-scale point; close together a floor keeps the zoom sane.
+        var rct = rvSvg.getBoundingClientRect();
+        var k = Math.max(rct.width, rct.height) / 500 || 1; /* px per unit */
+        var sb = safeBox();
+        var vwp = window.innerWidth || W, vhp = window.innerHeight || H;
+        var rBig = Math.max(rS, rM);
+        var extX = Math.abs(dAzC * cosA) + 2 * rBig;
+        var extY = Math.abs(g.mHz.altitude - g.sHz.altitude) + 2 * rBig;
+        var boxW = (sb.r - sb.l) * vwp / W / k, boxH = (sb.b - sb.t) * vhp / H / k;
+        s = Math.min(boxW / Math.max(extX * 1.18, 0.9), boxH / Math.max(extY * 1.18, 0.9));
+        cx = 250 + (sb.x * vwp / W - (rct.left + rct.width / 2)) / k;
+        cy = 250 + (sb.y * vhp / H - (rct.top + rct.height / 2)) / k;
+        half = rct.width / 2 / k;
+      }
+      var fov = half * 2 / s; /* field actually on screen, for the read-out */
       function px(az, alt) {
         var da = az - azC;
         if (da > 180) da -= 360; if (da < -180) da += 360;
-        return { x: 250 + da * cosA * s, y: 250 - (alt - altC) * s };
+        return { x: cx + da * cosA * s, y: cy - (alt - altC) * s };
       }
       var ps = px(g.sHz.azimuth, g.sHz.altitude);
       var pm = px(g.mHz.azimuth, g.mHz.altitude);
@@ -1029,8 +1150,9 @@
       rvGlow.setAttribute('r', (rS * s * 2.4).toFixed(1));
       rvGlow.setAttribute('opacity', ob > 0.85 ? ((ob - 0.85) / 0.15).toFixed(2) : 0);
       // Real horizon: the ground slides up and occludes the discs at sunset
-      var yHor = 250 + altC * s;
-      if (yHor > 520) yHor = 620; /* far below the frame: park it */
+      var yHor = cy + altC * s;
+      var yBot = cy + (swap ? rct.height / 2 / k : 250);
+      if (yHor > yBot + 20) yHor = yBot + 120; /* far below the frame: park it */
       rvGround.setAttribute('y', yHor.toFixed(1));
       rvHor.setAttribute('y', (yHor - 1.25).toFixed(1));
       if (rvFov) rvFov.textContent = 'CHAMP ' + fov.toFixed(1).replace('.', ',') + '°';
@@ -1075,7 +1197,7 @@
       // Camera: pan the sky so the pair sits in the middle of the free area,
       // instead of wherever on the canvas its sky coordinates happen to fall
       // (under the countdown block, on the legend, behind the ticker…).
-      var c = safeBox(), yH = y(0);
+      var c = safeBox(elBar.classList.contains('swap')), yH = y(0);
       var rDisc = (m === 'zoom' ? ZOOM_VW : WIDE_VW) / 2 / 100 * W;
       // Vertically the pair is centred only as far as the sky allows: with the
       // Sun high, centring it would push the horizon — and its azimuth ticks

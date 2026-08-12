@@ -281,18 +281,15 @@
   #rvhead b { font-size: 17px; font-weight: 900; letter-spacing: 0.5px; }
   #rvhead span { font-size: 15px; color: rgba(255,255,255,0.65); font-variant-numeric: tabular-nums; }
   #rvsvg { display: block; width: 100%; height: 21vw; }
-  /* cx/cy/r/y are CSS geometry properties in Chromium, and #rvcam carries the
-     camera as a transform: one shared duration, set to the update tick, turns
-     the once-a-second recompute into a continuous glide/zoom instead of a step.
-     Everything in the view uses it, so discs and trajectories move as one. */
-  #rvsvg circle, #rvsvg rect, #rvcam {
+  /* cx/cy/r/y are CSS geometry properties in Chromium: one tick of linear
+     easing turns the once-a-second recompute into a continuous glide/zoom.
+     The trajectories cannot ride this (points is not an animatable property)
+     and are redrawn per frame instead, on the same clock — see rvPaintPaths. */
+  #rvsvg circle, #rvsvg rect {
     transition: cx var(--rvstep,1s) linear, cy var(--rvstep,1s) linear,
                 r var(--rvstep,1s) linear, y var(--rvstep,1s) linear,
-                height var(--rvstep,1s) linear, transform var(--rvstep,1s) linear;
+                height var(--rvstep,1s) linear;
   }
-  /* Plain SVG user-space semantics for the camera transform (Chromium would
-     otherwise anchor it at the middle of the viewBox) */
-  #rvcam { transform-box: view-box; transform-origin: 0 0; }
 
   /* ===== Swapped scene (Companion: {"eclipseLowerThird":"swapViews"}) =====
      The two renderers trade places: the true-scale view takes the canvas and
@@ -447,11 +444,8 @@
             <stop offset="100%" stop-color="#161c3e"/>
           </radialGradient>
         </defs>
-        <!-- Trajectories live in a fixed sky frame; #rvcam is the camera -->
-        <g id="rvcam">
-          <polyline id="rvsunpath" fill="none" stroke="rgba(255,210,87,0.6)" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
-          <polyline id="rvmoonpath" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="8 7" vector-effect="non-scaling-stroke"/>
-        </g>
+        <polyline id="rvsunpath" fill="none" stroke="rgba(255,210,87,0.6)" stroke-width="2.5" stroke-linejoin="round"/>
+        <polyline id="rvmoonpath" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-dasharray="8 7"/>
         <circle id="rvglow" cx="250" cy="250" r="0" fill="url(#rvGlowGrad)" opacity="0"/>
         <circle id="rvsun" cx="250" cy="250" r="0" fill="url(#rvSunGrad)"/>
         <circle id="rvmoon" cx="250" cy="250" r="0" fill="url(#rvMoonGrad)" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
@@ -879,44 +873,7 @@
     var tz0 = tC1 - 75 * 60000, tz1 = tC4 + 25 * 60000;
     var dayFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: TZ });
     var dateKey = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ });
-    var mode = '', builtDay = '', x = null, y = null;
-
-    /* ===== True-scale world frame =====
-       The trajectories in the true-scale view used to be re-projected through
-       the moving camera on every tick, so the whole track — and the Moon's
-       dashes along it — stepped a notch each second. Instead they are drawn
-       once into a sky frame that never moves, and the camera becomes a single
-       transform over them (see #rvcam), which CSS can glide.
-
-       The frame is conformal: azimuth across, altitude stretched by Mercator
-       (dY/dalt = 1/cos alt). Conformal means the local picture is correct up
-       to one scalar, and the camera cancels exactly that scalar at the pair —
-       so the discs still land on their own tracks, at their true sizes.
-
-       Frame zero is the Sun's azimuth at the sample nearest "now" when the
-       chart was built. A track is unwrapped along its own samples (a day's
-       worth of them spans well over half the compass, so folding each one
-       into ±180° on its own would tear it), then re-seated on the branch that
-       holds at that anchor — which is the branch the camera reads too. */
-    var rvAzRef = null, rvCamX = null, rvCamSet = false;
-    function d180(a) { a = (a + 180) % 360; return (a < 0 ? a + 360 : a) - 180; }
-    function mercY(alt) {
-      var a = Math.max(-80, Math.min(80, alt));
-      return -(180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + a * Math.PI / 360));
-    }
-    function rvWorldPath(pts, body, anchor) {
-      var xs = [], az = 0, i;
-      for (i = 0; i < pts.length; i++) {
-        az += d180(pts[i][body].azimuth - rvAzRef - az); /* continuous track */
-        xs.push(az);
-      }
-      var shift = xs[anchor] - d180(pts[anchor][body].azimuth - rvAzRef);
-      var out = '';
-      for (i = 0; i < pts.length; i++) {
-        out += (xs[i] - shift).toFixed(4) + ',' + mercY(pts[i][body].altitude).toFixed(4) + ' ';
-      }
-      return out;
-    }
+    var mode = '', builtDay = '', x = null, y = null, chartPts = null;
 
     /* ===== Camera =====
        Where the Sun/Moon pair is parked on screen: the middle of what the
@@ -970,13 +927,7 @@
       var pts = [];
       for (var ts = ta; ts < tb; ts += step) pts.push(sunMoon(ts));
       pts.push(sunMoon(tb));
-      // Same samples feed the true-scale inset's trajectories, redrawn here
-      // and only here: from now on the camera transform alone moves them.
-      var anchor = Math.max(0, Math.min(pts.length - 1, Math.round((t - ta) / step)));
-      rvAzRef = pts[anchor].sHz.azimuth;
-      rvCamX = null; rvCamSet = false; /* fresh frame: re-aim without a glide */
-      if (rvSunPath) rvSunPath.setAttribute('points', rvWorldPath(pts, 'sHz', anchor));
-      if (rvMoonPath) rvMoonPath.setAttribute('points', rvWorldPath(pts, 'mHz', anchor));
+      chartPts = pts; /* shared with the true-scale inset's trajectory lines */
 
       var azLo = Infinity, azHi = -Infinity, altLo = Infinity, altHi = -Infinity;
       pts.forEach(function (p) {
@@ -1126,11 +1077,66 @@
       }, 320);
     }
 
-    var rvSvg = $('rvsvg'), rvCam = $('rvcam'),
+    var rvSvg = $('rvsvg'),
         rvSun = $('rvsun'), rvMoon = $('rvmoon'), rvGlow = $('rvglow'),
         rvGround = $('rvground'), rvHor = $('rvhor'), rvFov = $('rvfov'),
         rvSunPath = $('rvsunpath'), rvMoonPath = $('rvmoonpath');
     var rvSliced = null;
+
+    /* ===== Trajectories in the true-scale view =====
+       Both tracks are drawn through the same camera as the discs, and that
+       camera moves — it stays centred on the pair. The discs glide with it on
+       a CSS transition over one tick, but a polyline's points cannot be
+       transitioned, so redrawing them once a tick made the whole track (and
+       the dashes along the Moon's) jump a notch every second.
+
+       So the camera is sampled at each tick and the tracks are redrawn every
+       animation frame from a camera interpolated across it — the same linear
+       ramp, on the same clock, as the discs' transition. The projection and
+       the drawing are exactly what they were; only the rate changed. Per
+       frame this is ~220 points of flat arithmetic, and the disc transitions
+       already have the view repainting at frame rate anyway. */
+    var rvFrom = null, rvTo = null, rvAt = 0, rvSettled = false;
+    var rvStepMs = DEMO ? 200 : 1000; /* must match the updateSlow interval */
+    var nowMs = (window.performance && performance.now)
+      ? function () { return performance.now(); } : Date.now;
+    // Nothing to draw unless the fullscreen scene is up and the view has a
+    // place in it: on the canvas, or in the corner card while the card is on.
+    function rvOnScreen() {
+      return elBar.classList.contains('fs') &&
+             (elBar.classList.contains('swap') || !elBar.classList.contains('noreal'));
+    }
+    function rvMix(a, b, u) {
+      var d = b.azC - a.azC;
+      if (d > 180) d -= 360; if (d < -180) d += 360;
+      return { azC: a.azC + d * u, altC: a.altC + (b.altC - a.altC) * u,
+               cosA: a.cosA + (b.cosA - a.cosA) * u, s: a.s + (b.s - a.s) * u,
+               cx: a.cx + (b.cx - a.cx) * u, cy: a.cy + (b.cy - a.cy) * u };
+    }
+    function rvPoint(c, hz) {
+      var da = hz.azimuth - c.azC;
+      if (da > 180) da -= 360; if (da < -180) da += 360;
+      return (c.cx + da * c.cosA * c.s).toFixed(1) + ',' +
+             (c.cy - (hz.altitude - c.altC) * c.s).toFixed(1) + ' ';
+    }
+    function rvPaintPaths() {
+      if (!chartPts || !rvTo || !rvSunPath || !rvMoonPath) return;
+      if (rvSettled || !rvOnScreen()) return; /* nothing moves until the next tick */
+      var u = rvFrom === rvTo ? 1 : Math.min(1, (nowMs() - rvAt) / rvStepMs);
+      rvSettled = u >= 1;
+      var c = rvSettled ? rvTo : rvMix(rvFrom, rvTo, u);
+      var sp = '', mp = '';
+      for (var i = 0; i < chartPts.length; i++) {
+        sp += rvPoint(c, chartPts[i].sHz);
+        mp += rvPoint(c, chartPts[i].mHz);
+      }
+      rvSunPath.setAttribute('points', sp);
+      rvMoonPath.setAttribute('points', mp);
+    }
+    (function rvFrame() {
+      rvPaintPaths();
+      requestAnimationFrame(rvFrame);
+    })();
 
     // True-scale view: real apparent sizes, camera centered between the two
     // bodies, field of view auto-zoomed to keep both in frame. In the corner
@@ -1182,26 +1188,12 @@
       }
       var ps = px(g.sHz.azimuth, g.sHz.altitude);
       var pm = px(g.mHz.azimuth, g.mHz.altitude);
-      // Trajectory lines: fixed geometry in the sky frame, so all the camera
-      // has to do is aim at the pair. The Mercator stretch there is 1/cos(alt),
-      // which the cos(altC) in the scale cancels at the pair — the tracks meet
-      // the discs exactly, and only drift (correctly) far from them.
-      if (rvCam && rvAzRef !== null) {
-        rvCamX = rvCamX === null ? d180(azC - rvAzRef)
-                                 : rvCamX + d180(azC - rvAzRef - rvCamX);
-        var k = s * cosA;
-        var tf = 'translate(' + (cx - rvCamX * k).toFixed(2) + 'px,' +
-                 (cy - mercY(altC) * k).toFixed(2) + 'px) scale(' + k.toFixed(4) + ')';
-        if (rvCamSet) rvCam.style.transform = tf;
-        else {
-          // First aim would otherwise glide in from the untransformed frame
-          rvCamSet = true;
-          rvCam.style.transition = 'none';
-          rvCam.style.transform = tf;
-          rvCam.getBoundingClientRect(); /* flush, so the glide starts here */
-          rvCam.style.transition = '';
-        }
-      }
+      // Hand the camera to the per-frame painter (below) rather than drawing
+      // the trajectories here: once a tick is too coarse for them.
+      rvFrom = rvTo || null;
+      rvTo = { azC: azC, altC: altC, cosA: cosA, s: s, cx: cx, cy: cy };
+      if (!rvFrom) rvFrom = rvTo;
+      rvAt = nowMs(); rvSettled = false;
       rvSun.setAttribute('cx', ps.x.toFixed(1)); rvSun.setAttribute('cy', ps.y.toFixed(1));
       rvSun.setAttribute('r', (rS * s).toFixed(1));
       rvMoon.setAttribute('cx', pm.x.toFixed(1)); rvMoon.setAttribute('cy', pm.y.toFixed(1));

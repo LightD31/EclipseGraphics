@@ -794,15 +794,17 @@
          · red countdown block  width 46vw, right 0  → free up to 54vw
          · true-scale card      width 21vw, left 0   → hidden with .noreal
          · ticker + timeline    76px + 18px, bottom  → free above that
-         · caption + legend     top-left corner      → free below LEG_BOT */
+         · caption + legend     top-left corner      → free below LEG_BOT
+       hor is how low the horizon line may sit and still show its azimuth
+       ticks (+32) and compass points (+68) above the ticker. */
     var PAD = 26, LEG_BOT = 134;
-    function safeCenter() {
+    function safeBox() {
       var vh = window.innerHeight || H;
       var l = (elBar.classList.contains('noreal') ? 0 : W * 0.21) + PAD;
       var r = W * 0.54 - PAD;
       var t = LEG_BOT + PAD;
       var b = H - 94 * (H / vh) - PAD;
-      return { x: (l + r) / 2, y: (t + b) / 2 };
+      return { t: t, b: b, x: (l + r) / 2, y: (t + b) / 2, hor: b - 60 };
     }
     // Current pan, kept so a chart rebuild re-applies it to the fresh layers.
     var panX = 0, panY = 0;
@@ -1072,11 +1074,19 @@
       }
       // Camera: pan the sky so the pair sits in the middle of the free area,
       // instead of wherever on the canvas its sky coordinates happen to fall
-      // (under the countdown block, on the legend, behind the ticker…). It
-      // stops at the horizon rather than following the Sun underground: once
-      // set, the pair sinks below a centred horizon line.
-      var c = safeCenter();
-      setPan(c.x - (sx + mx) / 2, Math.max(c.y - (sy + my) / 2, c.y - y(0)));
+      // (under the countdown block, on the legend, behind the ticker…).
+      var c = safeBox(), yH = y(0);
+      var rDisc = (m === 'zoom' ? ZOOM_VW : WIDE_VW) / 2 / 100 * W;
+      // Vertically the pair is centred only as far as the sky allows: with the
+      // Sun high, centring it would push the horizon — and its azimuth ticks
+      // and compass points — off the bottom of the frame, so the pair rides
+      // higher instead, the way it does in the real sky. The floors then win
+      // over that preference: the camera never dives below the horizon (once
+      // the Sun has set, the pair sinks below a centred horizon line) and
+      // never lifts the pair into the caption and legend.
+      var py = Math.min(c.y - (sy + my) / 2, c.hor - yH);
+      py = Math.max(py, c.y - yH, c.t + rDisc - Math.min(sy, my));
+      setPan(c.x - (sx + mx) / 2, py);
       wrap.style.setProperty('--sunX', ((sx + panX) / W * 100).toFixed(2) + '%');
       wrap.style.setProperty('--sunY', ((sy + panY) / H * 100).toFixed(2) + '%');
       if (!moonWrap || !moonDisc) return;

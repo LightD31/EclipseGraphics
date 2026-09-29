@@ -24,6 +24,8 @@ from `astronomy.browser.min.js`, with hardcoded fallback timings if the live com
 | `twitch-messages.md` | Ready-to-paste Twitch chat messages (French), built from the Companion custom variables below. |
 | `a350f-first-flight.html` | A350F first-flight overlay (lower third + fullscreen live map), same look and same OBS/Companion control scheme as the eclipse overlay. |
 | `a350f-relay.js` | Tiny local server the A350F overlay reads its live ADS-B data through, which also records the whole flight (Node 18+, no dependencies). |
+| `a350f-status.html` | The operator's page for the A350F overlay (never on air): data health, what is on screen, and every command a click away. Served by the relay. |
+| `a350f-places.js` | Towns and coastlines of south-west France / northern Spain, for the A350F overlay's position in words. |
 
 Both widgets are meant to be added as an OBS **Browser Source** (transparent background).
 Since `astronomy.browser.min.js` is now a separate file, keep it alongside the widget HTML
@@ -201,10 +203,39 @@ eclipse overlay's design and choreography one for one:
   flight-data panel (altitude, ground speed, vertical speed, heading, distance, Mach/IAS)
   under the red block, and a corner card with the **flight profile** (altitude and ground
   speed over time). `main.profile` swaps the two, putting the profile on the canvas.
+- **recap** (`layout.recap`) — after landing: the whole route, and a "bilan du premier
+  vol" panel (times and runways, duration, distance, max altitude / speed / Mach) with
+  bars comparing it with the A350-900 (4 h 05, 2013) and A350-1000 (4 h 18, 2016) first
+  flights. `?recap=auto` moves an on-air fullscreen to it 3 minutes after landing.
 
 The headline follows the flight by itself — *premier vol de l'Airbus A350F* → *l'A350F
 roule vers la piste* → *course au décollage* → *décollage !* → *en montée* / *essais en
 cours* / *en descente* → *retour vers Toulouse* → *en finale* → *premier vol réussi !*
+A low pass, a go-around or a touch-and-go (common on first flights) gets its own
+headline for three minutes.
+
+On top of that, taking some liberties with the eclipse overlay:
+
+- **Event banners** — each milestone is announced for 8 s (above the strap in the lower
+  third, under the map caption in the fullscreen) and marked on the flight profile:
+  take-off (with its runway), 10 000 ft, each level-off, Mach 0,80 / 0,85, first time over
+  the Atlantic, top of descent, low pass / go-around / touch-and-go, landing.
+- **Where it is, in words** — "à 12 km au nord de Mont-de-Marsan (Landes)", "au large
+  d'Arcachon", "au-dessus des Pyrénées, près d'Andorre-la-Vieille"… in the strap and under
+  the map caption; offline, from `a350f-places.js`.
+- **Waiting-time content** — before take-off the ticker rotates the A350F's facts
+  (dimensions, masses, cargo door, test campaign) and the **live Toulouse weather**
+  (METAR: wind, gusts, temperature, cloud, visibility); after landing, the first-flight
+  comparison.
+- **Rolling figures** — the altitude carries on at the reported climb rate between
+  reports and every readout eases to its new value, like an instrument.
+- **Metric mode** — `units.metric` (or `?units=metric`) puts metres and km/h first.
+- **Live controls** — reschedule, mark take-off, custom headline, custom banner, neutral
+  wording, without touching the source URL (see commands), from Companion or the
+  **status page**.
+- **Safety** — squawk 7500 / 7600 / 7700 or an emergency status switches to neutral
+  wording (no "premier vol réussi" until `mode.auto`) and raises `a350f_alert`; nothing
+  alarming goes on air by itself.
 
 ### Live data: ADS-B via adsb.lol / adsb.fi
 
@@ -271,6 +302,30 @@ take-off, and the trace starts later), set it with `?takeoff=HH:MM`.
 |---|---|
 | `GET /adsb/history/<hex>` | The recording, oldest first: `{hex, now, boot, filled, count, points}`. `?since=<epoch ms>` for points measured from then on; `?raw` for the full API objects instead of the fields the page uses. |
 | `GET /flight-log/<file>.jsonl` | A day's log file as written (the folder is served like the rest). |
+| `GET /wx/<ICAO>` | The airport's latest METAR from [aviationweather.gov](https://aviationweather.gov/data/api/) (free, no key), cached 5 min. |
+| `GET /status` | Relay health, upstreams, recording, the overlays' reported state, last log lines (for the status page). |
+| `POST /state` · `POST /command` | Overlays report their state every 2 s and pick up queued commands in the answer; the status page queues commands when it isn't connected to OBS. |
+
+> **On a network:** with `--host 0.0.0.0`, anyone who can reach the relay can also queue
+> commands for the on-air overlay (`POST /command`). Keep the default `127.0.0.1` unless
+> the network is yours.
+
+### Status page (`a350f-status.html`)
+
+Open `http://127.0.0.1:8787/a350f-status.html` in any browser on the broadcast machine —
+it is the operator's page, never a browser source:
+
+- **health tiles** — relay, ADS-B signal age, adsb.lol / adsb.fi (backoff, errors),
+  recording, overlays connected, OBS connection;
+- **what is on air** — each overlay's headline, timer, layout, units, tone, phase,
+  figures and position, and any transponder alert;
+- **the flight's events** and the relay's log;
+- **every command** as a button, plus fields for a new take-off time (+5 / +15 min), the
+  actual take-off ("maintenant"), a custom headline and a custom banner.
+
+Commands go through OBS's websocket when the page is connected to it (port and password
+typed once, remembered by that browser) — instant, like Companion — and through the
+relay otherwise (each overlay picks them up within 2 s).
 
 ### Query parameters
 
@@ -290,7 +345,11 @@ take-off, and the trace starts later), set it with `?takeoff=HH:MM`.
 | `?tiles=URL` | Basemap tile template (`{z}/{x}/{y}`, `{s}` → a–d, `{r}` → `@2x`), or `none`. Default: OpenStreetMap. |
 | `?tilestyle=invert\|tint\|raw` | How the tiles are recoloured to the navy: `invert` for light maps (default for OSM), `tint` for dark maps (default for `?tiles=`), `raw` for as-is. |
 | `?attrib=TEXT` | Map credit for a custom `?tiles=` provider. |
-| `?layout=full\|lower` · `?main=map\|profile` · `?card=on\|off` · `?map=track\|follow` | Starting state (see commands). |
+| `?layout=full\|lower\|recap` · `?main=map\|profile` · `?card=on\|off` · `?map=track\|follow` | Starting state (see commands). |
+| `?units=metric` | Metres, km/h and m/s first (ft, kt, ft/min underneath). Default: aviation units. |
+| `?recap=auto` | Three minutes after landing, an on-air fullscreen moves to the recap by itself. |
+| `?squawk=7700` | Demo only: inject an emergency squawk, to rehearse the neutral mode. |
+| `?debug` | Expose `window.a350fDebug` (`ingest`, `state`) for automated tests. |
 | `?obspw=` · `?obsport=` · `?companion=HOST[:PORT]` · `?noautoanim` | As for the eclipse overlay. |
 
 The default basemap is OpenStreetMap's own tile server, inverted into the broadcast
@@ -308,11 +367,22 @@ with `{"a350f": "<command>"}`, or `window.a350fCommand('<command>')`.
 | Command | Effect |
 |---|---|
 | `air.on` / `air.off` / `air.toggle` | Slide on / off air. |
-| `air.on.full` / `air.on.lower` | Land on air in the named layout in one step. |
-| `layout.full` / `layout.lower` / `layout.toggle` | Fullscreen map ↔ lower third (morphs when on air). |
+| `air.on.full` / `air.on.lower` / `air.on.recap` | Land on air in the named layout in one step. |
+| `layout.full` / `layout.lower` / `layout.recap` / `layout.toggle` | Fullscreen map, lower third, or the after-flight recap (morphs when on air; toggle is lower ↔ full). |
 | `main.map` / `main.profile` / `main.toggle` | Which view owns the fullscreen canvas: the map, or the flight profile. |
 | `card.on` / `card.off` / `card.toggle` | Corner card (whichever view is in it). |
 | `map.track` / `map.follow` / `map.toggle` | Fullscreen map framing: the whole track (default), or riding with the aircraft. |
+| `t0.HH:MM` · `t0.+N` / `t0.-N` · `t0.reset` | Reschedule the take-off (countdown, ticker and profile follow), shift it by N minutes, or go back to `?t0`. |
+| `takeoff.now` · `takeoff.HH:MM[:SS]` · `takeoff.auto` | Set the actual take-off time (when the page missed it), or back to what ADS-B showed. |
+| `headline.<text>` · `headline.set` + `"text"` · `headline.auto` | Replace the automatic headline with your own, or give it back. |
+| `banner.<text>` · `banner.set` + `"text"` · `banner.clear` | Show your own 8-second banner / clear the banner queue. |
+| `mode.neutral` / `mode.auto` / `mode.toggle` | Factual wording only (no "décollage !", no "premier vol réussi !"), or back to normal. |
+| `units.metric` / `units.aviation` / `units.toggle` | Which units come first. |
+
+The last five are kept per aircraft and day, so they survive a refresh, and are shared by
+every browser source of the overlay. `"text"` is a second field of the custom event —
+`{"a350f": "headline.set", "text": "Les pilotes saluent Toulouse"}` — for text that
+contains dots.
 
 Preview keys: **R** card, **S** swap, **F** track/follow; click and double-click as for
 the eclipse overlay.
@@ -321,8 +391,12 @@ the eclipse overlay.
 
 | Variable | Example | Description |
 |---|---|---|
-| `a350f_air` / `_layout` / `_main` / `_card` / `_map` | `on`, `full`, `map`, `on`, `track` | View state, one per command namespace. |
-| `a350f_phase` | `attente` \| `roulage` \| `course` \| `decollage` \| `montee` \| `palier` \| `descente` \| `approche` \| `finale` \| `atterri` | Flight phase. |
+| `a350f_air` / `_layout` / `_main` / `_card` / `_map` | `on`, `full`, `map`, `on`, `track` | View state, one per command namespace (`_layout` can be `recap`). |
+| `a350f_mode` / `_units` / `_headline` | `auto` \| `neutral` / `aviation` \| `metric` / `auto` \| `custom` | The operator overrides' state. |
+| `a350f_alert` | `7700`, `general`… or empty | Emergency squawk or status reported by the transponder. |
+| `a350f_event` / `_event_text` / `_event_n` | `palier` / `En palier à 31 000 ft (9 450 m · FL310)` / `4` | The banner just shown; `_event_n` counts them, for a "variable changed" trigger (stinger, chat message). |
+| `a350f_where` | `à 12 km au nord de Mont-de-Marsan (Landes)` | Where the aircraft is, in words. |
+| `a350f_phase` | `attente` \| `roulage` \| `course` \| `decollage` \| `montee` \| `palier` \| `descente` \| `approche` \| `finale` \| `passage` \| `remise` \| `touchgo` \| `atterri` | Flight phase. |
 | `a350f_signal` | `live` \| `stale` \| `none` | Whether ADS-B is current (stale after 30 s without a position). |
 | `a350f_source` | `adsb.lol`, `adsb.fi`, `erreur` | Where the data came from — `erreur` when no source answers (relay not running?). |
 | `a350f_timer` / `a350f_time` | `01:23:45` / `1 h 23` | The on-screen timer, and a coarse version that changes once a minute. |
@@ -336,7 +410,13 @@ the eclipse overlay.
 For a periodic Twitch message, in the same spirit as [`twitch-messages.md`](twitch-messages.md):
 
 ```
-✈️ Premier vol de l'Airbus A350F en direct de Toulouse · $(custom:a350f_status) · $(custom:a350f_alt), $(custom:a350f_speed) ($(custom:a350f_speed_kmh)) · $(custom:a350f_label) $(custom:a350f_time)
+✈️ Premier vol de l'Airbus A350F en direct de Toulouse · $(custom:a350f_status) · $(custom:a350f_alt), $(custom:a350f_speed) ($(custom:a350f_speed_kmh)) · $(custom:a350f_where) · $(custom:a350f_label) $(custom:a350f_time)
+```
+
+And one per milestone, on a Companion trigger watching `$(custom:a350f_event_n)`:
+
+```
+📍 $(custom:a350f_event_text) · premier vol de l'A350F en direct
 ```
 
 ## License
@@ -348,3 +428,6 @@ license header inside that file.
 The A350F overlay displays third-party data, credited on screen: ADS-B data from
 [adsb.lol](https://adsb.lol) (ODbL) or [adsb.fi](https://adsb.fi) (personal,
 non-commercial use, with attribution), and map tiles © OpenStreetMap contributors (ODbL).
+`a350f-places.js` is derived from [GeoNames](https://www.geonames.org) (CC BY 4.0); the
+Toulouse weather is the public METAR served by the US National Weather Service's
+[aviationweather.gov](https://aviationweather.gov) API.

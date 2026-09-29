@@ -23,7 +23,7 @@ from `astronomy.browser.min.js`, with hardcoded fallback timings if the live com
 | `astronomy.browser.min.js` | Shared Astronomy Engine library (MIT), loaded by both widgets via `<script src>`. |
 | `twitch-messages.md` | Ready-to-paste Twitch chat messages (French), built from the Companion custom variables below. |
 | `a350f-first-flight.html` | A350F first-flight overlay (lower third + fullscreen live map), same look and same OBS/Companion control scheme as the eclipse overlay. |
-| `a350f-relay.js` | Tiny local server the A350F overlay reads its live ADS-B data through (Node 18+, no dependencies). |
+| `a350f-relay.js` | Tiny local server the A350F overlay reads its live ADS-B data through, which also records the whole flight (Node 18+, no dependencies). |
 
 Both widgets are meant to be added as an OBS **Browser Source** (transparent background).
 Since `astronomy.browser.min.js` is now a separate file, keep it alongside the widget HTML
@@ -219,22 +219,58 @@ allows browser calls from its own site.
 
 **Run the relay.** Neither API sends CORS headers, so a browser source can't read them
 directly. `a350f-relay.js` serves this folder and forwards the API calls from the same
-origin, sharing one upstream request between every source that asks within a second, and
-switching to adsb.fi when adsb.lol errors or rate-limits:
+origin, sharing one upstream request between every source that asks, and switching to
+adsb.fi when adsb.lol errors or rate-limits. It also **records the flight** (below), so
+start it early — before the engines start, ideally — and leave it running:
 
 ```
 node a350f-relay.js                 # → http://127.0.0.1:8787/a350f-first-flight.html
 node a350f-relay.js --port 9000 --host 0.0.0.0   # reachable from another machine
 ```
 
+| Relay option | Description |
+|---|---|
+| `--port N` / `--host ADDR` | Where to listen (default `127.0.0.1:8787`). |
+| `--watch HEX[,HEX…]` | Aircraft to record from startup (default `39a53b`, F-WXLD; `none` for none). Any aircraft the page asks about is added. |
+| `--log DIR` | Where the recording goes (default `flight-log/` next to the relay, git-ignored). |
+
 Then add the browser source (1920×1080) as
 `http://127.0.0.1:8787/a350f-first-flight.html?obspw=…&companion=…`. A page opened as
 a local file can still use a running relay with `?relay=http://127.0.0.1:8787`.
 
-The recorded track survives a refresh of the browser source (it is kept in the page's
-local storage per registration and day), so toggling "refresh when scene becomes
-active" mid-flight doesn't erase it. Take-off time is detected when the aircraft leaves
-the ground; if the page only started after take-off, set it with `?takeoff=HH:MM`.
+### Flight recording: the whole flight, whatever gets disconnected
+
+Every point the API returns is kept, with all its fields, so the flight can be rebuilt
+end to end after any interruption:
+
+- **The relay records by itself.** It polls the watched aircraft every 2 s (every 10 s
+  while it hasn't been seen for 10 minutes) whether or not a browser source is open, and
+  appends every new position to `flight-log/<hex>-<UTC date>.jsonl` — one JSON object
+  per line, the API's full aircraft object plus `_t` (when the position was measured,
+  epoch ms) and `_src` (which API gave it). The log is reloaded when the relay restarts.
+- **Holes are filled from adsb.lol's own track.** If the relay loses the APIs (network
+  down), is stopped for a while, or the aircraft goes out of receiver coverage, it
+  fetches adsb.lol's recorded trace of the aircraft (the one its map draws, a point every
+  ~10–20 s) once back, and merges it into the gap — keeping its own finer points wherever
+  it has them. It does the same at startup, so starting the relay late still recovers the
+  day's flight so far.
+- **The page catches up from the relay.** On load, after a reconnection and every
+  minute, the page fetches the relay's recording (`/adsb/history/<hex>`) and merges it
+  into its own, then replays the flight to re-derive take-off, landing, max altitude,
+  max speed and distance flown. A browser source refreshed mid-flight, or opened for the
+  first time after take-off, therefore shows the whole track and profile at once. The
+  page also keeps every point in its own local storage (per registration and day), so a
+  refresh doesn't lose anything even without the relay.
+
+Tested by killing the relay for 75 s mid-flight: once it was back, the page's track had no
+hole longer than 21 s across the outage. Take-off time is detected when the aircraft
+leaves the ground; if neither the page nor the relay saw that (both started after
+take-off, and the trace starts later), set it with `?takeoff=HH:MM`.
+
+| Relay route | Returns |
+|---|---|
+| `GET /adsb/history/<hex>` | The recording, oldest first: `{hex, now, boot, filled, count, points}`. `?since=<epoch ms>` for points measured from then on; `?raw` for the full API objects instead of the fields the page uses. |
+| `GET /flight-log/<file>.jsonl` | A day's log file as written (the folder is served like the rest). |
 
 ### Query parameters
 
@@ -248,7 +284,7 @@ the ground; if the page only started after take-off, set it with `?takeoff=HH:MM
 | `?msn=N` | MSN shown on screen (default `700`). |
 | `?poll=N` | Seconds between API polls (default `2`, minimum `1`). |
 | `?relay=URL` | Relay to use when the page isn't served by it. |
-| `?reset` | Forget the stored track and times for this aircraft and day. |
+| `?reset` | Forget the page's stored track and times for this aircraft and day (the relay's recording, if any, is fetched again). |
 | `?demo` | Play a synthetic first flight instead of live data (taxi, take-off from 32L, a loop over the Atlantic and along the Pyrenees, landing back). |
 | `?speed=N` / `?from=N` | Demo speed multiplier (default `30`) / start point in minutes relative to the scheduled take-off (default `-8`; e.g. `from=60` to preview mid-flight). |
 | `?tiles=URL` | Basemap tile template (`{z}/{x}/{y}`, `{s}` → a–d, `{r}` → `@2x`), or `none`. Default: OpenStreetMap. |

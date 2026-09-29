@@ -783,11 +783,14 @@
   }
 
   // ===== Flight state =====
-  // samples: the recorded track, one point every few seconds; live: the last
-  // ADS-B report. Both survive a reload of the browser source (localStorage),
-  // so re-activating the scene mid-flight keeps the whole track.
+  // samples: every position report received, in time order; live: the
+  // newest one, with everything else it carried. The samples survive a
+  // reload of the browser source (localStorage), and when the page is served
+  // by the relay they are topped up from its recording (/adsb/history) on
+  // load, after a reconnection and every minute — so a gap on this side, or
+  // a page opened for the first time mid-flight, still gets the whole flight.
   var STORE = 'a350f:' + (DEMO ? 'demo' : REG + ':' + DAY);
-  var st = { samples: [], takeoff: null, landing: null, altMax: 0, gsMax: 0, dist: 0, hex: HEX };
+  var st = { samples: [], takeoff: null, landing: null, airSeen: false, altMax: 0, gsMax: 0, dist: 0, hex: HEX };
   try {
     if (DEMO || params.has('reset')) localStorage.removeItem(STORE);
     var saved = JSON.parse(localStorage.getItem(STORE) || 'null');
@@ -809,63 +812,96 @@
 
   function takeoffTime() { return TAKEOFF_OVERRIDE || st.takeoff; }
 
-  /* One ADS-B aircraft object (readsb / ADSBx v2 format) → state.
-     tPos: when the position was measured, in this page's clock. */
-  function ingest(a, tPos) {
+  /* A report (readsb / ADSBx v2 fields) → a compact sample:
+     t (ms), lat, lon, a: altitude in ft (null on the ground or unknown),
+     s: ground speed (kt), g: 1 on the ground, v: vertical rate (ft/min). */
+  function toSample(a, t) {
+    if (typeof a.lat !== 'number' || typeof a.lon !== 'number') return null;
     var gnd = a.alt_baro === 'ground';
-    var alt = gnd ? null : (typeof a.alt_baro === 'number' ? a.alt_baro
-            : typeof a.alt_geom === 'number' ? a.alt_geom : null);
-    var gs = typeof a.gs === 'number' ? a.gs : (live ? live.gs : 0);
-    // No position in this report: nothing to place or record (keeping the
-    // old position with a new time would pull the aircraft backwards).
-    if (typeof a.lat !== 'number' || typeof a.lon !== 'number') return;
-    var lat = a.lat, lon = a.lon;
-    var near = distKm(lat, lon, HOME.lat, HOME.lon) < 6;
+    var alt = gnd ? null : typeof a.alt_baro === 'number' ? a.alt_baro
+            : typeof a.alt_geom === 'number' ? a.alt_geom : null;
+    var gs = typeof a.gs === 'number' ? a.gs : 0;
     // Some transponders never report "ground": slow, at field elevation, on
     // the airfield counts as on the ground too.
-    if (!gnd && alt != null && near && alt < HOME.elev + 250 && gs < 50) gnd = true;
-    var trk = typeof a.track === 'number' ? a.track : typeof a.true_heading === 'number' ? a.true_heading
-            : typeof a.mag_heading === 'number' ? a.mag_heading : (live ? live.trk : 0);
+    if (!gnd && alt != null && alt < HOME.elev + 250 && gs < 50 &&
+        distKm(a.lat, a.lon, HOME.lat, HOME.lon) < 6) gnd = true;
     var vs = typeof a.baro_rate === 'number' ? a.baro_rate : typeof a.geom_rate === 'number' ? a.geom_rate : 0;
-    var prev = live;
-    live = {
-      t: tPos, lat: lat, lon: lon, alt: alt, gnd: gnd, gs: gs, trk: trk, vs: vs,
-      mach: typeof a.mach === 'number' ? a.mach : null, ias: typeof a.ias === 'number' ? a.ias : null,
-      oat: typeof a.oat === 'number' ? a.oat : null, squawk: a.squawk || '',
-      flight: (a.flight || '').trim(), hex: (a.hex || HEX).toLowerCase(), near: near,
-      seenAt: Date.now() - (a.seen_pos || 0) * 1000
-    };
-    if (prev && tPos <= prev.t) return; // same report again: nothing new to record
-
-    // Take-off, on the first airborne report only: seen leaving the ground →
-    // between the two reports; picked up already climbing → back-computed
-    // from the height gained; picked up high (page started mid-flight) →
-    // left unknown, unless ?takeoff= says.
+    return { t: Math.round(t), lat: +a.lat.toFixed(5), lon: +a.lon.toFixed(5),
+             a: gnd || alt == null ? null : Math.round(alt), s: Math.round(gs), g: gnd ? 1 : 0, v: Math.round(vs) };
+  }
+  /* In time order; a repeat of a report already held (same position within
+     a second: the same answer seen twice) is dropped.
+     → 'append' | 'insert' (into the past: a hole being filled) | false */
+  function addSample(p) {
+    var S = st.samples, lo = 0, hi = S.length;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (S[mid].t < p.t) lo = mid + 1; else hi = mid; }
+    for (var k = lo - 1; k <= lo; k++) {
+      var q = S[k];
+      if (q && Math.abs(q.t - p.t) < 1000 && q.lat === p.lat && q.lon === p.lon) return false;
+    }
+    S.splice(lo, 0, p);
+    trackDirty = true;
+    return lo === S.length - 1 ? 'append' : 'insert';
+  }
+  /* Take-off, landing and the records, from a sample and the one before it.
+     Take-off, on the first airborne sample only: seen leaving the ground →
+     between the two; picked up already climbing → back-computed from the
+     height gained; picked up high (joined mid-flight) → left unknown, unless
+     ?takeoff= says. */
+  function step(prev, p) {
+    var gnd = p.g === 1;
     if (!gnd && !st.takeoff && !st.airSeen) {
-      var agl = (alt || HOME.elev) - HOME.elev;
-      if (prev && prev.gnd && tPos - prev.t < 60000) st.takeoff = Math.round((prev.t + tPos) / 2);
-      else if (agl < 3000 && vs > 300) st.takeoff = Math.round(tPos - agl / vs * 60000);
-      else if (agl < 400) st.takeoff = tPos;
+      var agl = (p.a == null ? HOME.elev : p.a) - HOME.elev;
+      if (prev && prev.g && p.t - prev.t < 60000) st.takeoff = Math.round((prev.t + p.t) / 2);
+      else if (agl < 3000 && p.v > 300) st.takeoff = Math.round(p.t - agl / p.v * 60000);
+      else if (agl < 400) st.takeoff = p.t;
     }
     if (!gnd) st.airSeen = true;
-    if (!gnd && st.landing && tPos - st.landing > 60000) st.landing = null; // off again
-    if (gnd && st.airSeen && !st.landing) st.landing = tPos;
+    if (!gnd && st.landing && p.t - st.landing > 60000) st.landing = null; // off again
+    if (gnd && st.airSeen && !st.landing) st.landing = p.t;
     if (!gnd) {
-      st.altMax = Math.max(st.altMax, alt || 0);
-      st.gsMax = Math.max(st.gsMax, gs);
-      if (prev && !prev.gnd) st.dist += distKm(prev.lat, prev.lon, lat, lon);
+      st.altMax = Math.max(st.altMax, p.a || 0);
+      st.gsMax = Math.max(st.gsMax, p.s);
+      if (prev && !prev.g) st.dist += distKm(prev.lat, prev.lon, p.lat, p.lon);
     }
-    var last = st.samples[st.samples.length - 1];
-    // Record: every 4 s airborne, every 10 s on the ground, and always on a
-    // ground/air change, so the profile's steps land where they happened.
-    if (!last || tPos - last.t >= (gnd ? 10000 : 4000) || last.g !== (gnd ? 1 : 0)) {
-      st.samples.push({ t: tPos, lat: +lat.toFixed(5), lon: +lon.toFixed(5), a: alt == null ? null : Math.round(alt),
-                        s: Math.round(gs), g: gnd ? 1 : 0 });
-      trackDirty = true;
+  }
+  // After points land in the past (a hole filled), replay the whole flight.
+  function recompute() {
+    st.takeoff = null; st.landing = null; st.airSeen = false;
+    st.altMax = 0; st.gsMax = 0; st.dist = 0;
+    for (var i = 0; i < st.samples.length; i++) step(st.samples[i - 1], st.samples[i]);
+  }
+
+  /* One report → state. t: when the position was measured (epoch ms, the
+     data's own clock); age: how long ago that was, as best this page can
+     tell. batch: part of a history merge, whose caller replays the flight
+     once at the end. → what addSample did. */
+  function ingest(a, t, age, batch) {
+    var p = toSample(a, t);
+    if (!p) return false;
+    var how = addSample(p);
+    if (how === 'append') step(st.samples[st.samples.length - 2], p);
+    else if (how === 'insert' && !batch) recompute();
+    if (!live || p.t >= live.t) { // the newest report yet: it is the live one
+      var prev = live;
+      live = {
+        t: p.t, tl: now() - age, lat: a.lat, lon: a.lon, alt: p.a, gnd: p.g === 1,
+        gs: typeof a.gs === 'number' ? a.gs : 0,
+        trk: typeof a.track === 'number' ? a.track : typeof a.true_heading === 'number' ? a.true_heading
+           : typeof a.mag_heading === 'number' ? a.mag_heading : (prev ? prev.trk : 0),
+        vs: p.v, mach: typeof a.mach === 'number' ? a.mach : null, ias: typeof a.ias === 'number' ? a.ias : null,
+        oat: typeof a.oat === 'number' ? a.oat : null, squawk: a.squawk || '',
+        flight: (a.flight || '').trim(), hex: (a.hex || HEX).toLowerCase(),
+        near: distKm(a.lat, a.lon, HOME.lat, HOME.lon) < 6, seenAt: Date.now() - age
+      };
+      st.hex = live.hex;
+      if (!prev || prev.t !== p.t) newReport();
     }
-    st.hex = live.hex;
-    save(last && last.g !== (gnd ? 1 : 0));
-    newReport();
+    if (how) {
+      var before = st.samples[st.samples.length - 2];
+      save(!batch && how === 'append' && before && before.g !== p.g); // at once on take-off / landing
+    }
+    return how;
   }
 
   // ===== Sources =====
@@ -908,6 +944,43 @@
     }
     return attempt();
   }
+
+  // ===== The relay's recording: everything this page missed =====
+  // Incremental (points measured since the last sync, with a 2-minute
+  // overlap), except when the relay has filled holes further back since —
+  // from adsb.lol's trace, after an outage — or restarted: then all of it.
+  // Only the flight day's points: the relay may hold earlier days too.
+  var DAY_START = parisTime(DAY, '00:00'), DAY_END = DAY_START + 86400000;
+  var hist = { since: DAY_START, key: '', rec: '', busy: false, again: false };
+  function relayBase() {
+    for (var i = 0; i < SOURCES.length; i++) if (SOURCES[i].base) return SOURCES[i].base;
+    return null;
+  }
+  function syncHistory() {
+    var base = relayBase();
+    if (DEMO || !base || hist.busy) return;
+    hist.busy = true;
+    var full = !hist.key;
+    getJSON(base + '/history/' + HEX + '?since=' + hist.since).then(function (j) {
+      var key = j.hex + ':' + j.boot + ':' + j.filled;
+      if (!full && key !== hist.key) { hist.since = DAY_START; hist.key = ''; hist.again = true; return; }
+      hist.key = key;
+      hist.rec = j.boot + ':' + j.filled;
+      hist.since = Math.max(DAY_START, j.now - 120000);
+      var inserted = false, added = 0;
+      (j.points || []).forEach(function (a) {
+        if (!(a._t >= DAY_START && a._t < DAY_END)) return;
+        var how = ingest(a, a._t, Math.max(0, j.now - a._t), true);
+        if (how) added++;
+        if (how === 'insert') inserted = true;
+      });
+      if (inserted) recompute();
+      if (added) save(true);
+    }).catch(function () { /* no relay: this page's own points only */ }).then(function () {
+      hist.busy = false;
+      if (hist.again) { hist.again = false; syncHistory(); }
+    });
+  }
   var pollN = 0;
   function poll() {
     pollN++;
@@ -920,6 +993,9 @@
       else { kind = 'reg'; val = REG; }
     }
     query(kind, val).then(function (j) {
+      // Back after an outage, or the relay has filled holes since the last
+      // sync (its _rec moved on): fetch what this page is missing.
+      if (sourceErr || (j._rec && hist.key && j._rec !== hist.rec)) syncHistory();
       sourceErr = false;
       var list = j.ac || j.aircraft || [];
       var a = null;
@@ -929,9 +1005,16 @@
             (CALLSIGN && (c.flight || '').trim().toUpperCase() === CALLSIGN)) a = c;
       }
       if (!a) return;
-      if (a.hex && a.hex.toLowerCase() !== HEX && /^[0-9a-f]{6}$/i.test(a.hex)) HEX = a.hex.toLowerCase();
+      if (a.hex && a.hex.toLowerCase() !== HEX && /^[0-9a-f]{6}$/i.test(a.hex)) {
+        HEX = a.hex.toLowerCase();
+        syncHistory();
+      }
+      // Measured at the data's own clock (so the relay's recording and this
+      // page agree on each point's time); its age also counts how long the
+      // relay held the answer (_age).
       var seen = typeof a.seen_pos === 'number' ? a.seen_pos : (a.seen || 0);
-      ingest(a, Date.now() - seen * 1000);
+      var upNow = +j.now > 1e12 ? +j.now : +j.now * 1000;
+      ingest(a, (upNow || Date.now()) - seen * 1000, (j._age || 0) + seen * 1000);
     }, function () {
       sourceErr = true;
     }).then(function () { setTimeout(poll, POLL_MS); });
@@ -1030,9 +1113,11 @@
   if (DEMO) {
     var sim = demoSource();
     sourceName = 'démo';
-    setInterval(function () { var t = now(); ingest(sim(t), t); }, 200);
+    setInterval(function () { var t = now(); ingest(sim(t), t, 0); }, 200);
   } else {
     poll();
+    syncHistory();
+    setInterval(syncHistory, 60000);
   }
 
   // ===== Phase =====
@@ -1365,7 +1450,7 @@
   var shown = null, corr = { x: 0, y: 0, at: 0 };
   function predicted(t) {
     if (!live) return null;
-    var dt = Math.max(0, Math.min(20000, t - live.t)) / 1000;
+    var dt = Math.max(0, Math.min(20000, t - live.tl)) / 1000;
     if (live.gs < 3 || (!DEMO && Date.now() - live.seenAt > 30000)) dt = 0;
     var dist = live.gs * 0.514444 * dt;
     var lat = live.lat + dist * Math.cos(live.trk * RAD) / 111320;
@@ -1570,8 +1655,12 @@
       o.push('<text x="' + ((box.l + box.r) / 2) + '" y="' + ((box.t + box.b) / 2) + '" text-anchor="middle" font-size="' +
              (fsz + 4) + '" font-weight="900" fill="rgba(255,255,255,0.8)">EN ATTENTE DU DÉCOLLAGE</text>');
     } else {
-      var line = [], spd = [];
-      S.forEach(function (s) {
+      var line = [], spd = [], lastX = -1e9;
+      S.forEach(function (s, i) {
+        // every point is kept, but one per pixel column is all a line needs
+        var px = X(s.t);
+        if (px - lastX < 1 && i < S.length - 1) return;
+        lastX = px;
         var alt = s.g ? 0 : Math.max(0, (s.a == null ? HOME.elev : s.a) - HOME.elev);
         line.push(X(s.t).toFixed(1) + ',' + Y(alt).toFixed(1));
         spd.push(X(s.t).toFixed(1) + ',' + YS(s.s).toFixed(1));

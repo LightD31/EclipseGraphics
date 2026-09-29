@@ -17,6 +17,8 @@
      GET /adsb/reg/<reg>         aircraft by registration
      GET /adsb/callsign/<cs>     aircraft by callsign
      GET /adsb/history/<icao24>  every point recorded for it (?since=<ms>, ?raw=1)
+     GET /wx/<ICAO>              the airport's latest METAR (aviationweather.gov),
+                                 cached 5 minutes
      GET /<file>                 static files from this folder
 
    The /adsb answers are the upstream's own readsb JSON ({"ac":[…]}) plus
@@ -93,6 +95,7 @@ const GAP_MS = 60000;       /* a hole this long in the recording triggers a back
 const TRACE_NEAR_MS = 8000; /* trace points closer than this to a recorded one are redundant */
 
 const cache = new Map();    /* "kind/value" -> { at, body } */
+const wxCache = new Map();  /* ICAO -> { at, body } */
 const BOOT = Date.now();    /* with filled: lets a page tell that the past changed */
 let filled = 0;             /* points put into holes (trace backfills) since start */
 const inflight = new Map(); /* "kind/value" -> Promise<{ at, body }> */
@@ -138,6 +141,25 @@ async function adsb(kind, value, maxAge) {
   }).finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
+}
+
+// ===== Weather: the airport's METAR, for the page's waiting-time ticker =====
+async function metar(icao) {
+  const hit = wxCache.get(icao);
+  if (hit && Date.now() - hit.at < 300000) return hit.body;
+  try {
+    const res = await fetch('https://aviationweather.gov/api/data/metar?ids=' + icao + '&format=json',
+                            { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const list = await res.json();
+    const body = { icao, metar: Array.isArray(list) && list[0] || null, fetched: Date.now() };
+    wxCache.set(icao, { at: Date.now(), body });
+    return body;
+  } catch (e) {
+    console.warn(new Date().toISOString(), 'metar', icao, e.message);
+    if (hit) return hit.body; // an older report beats none
+    throw e;
+  }
 }
 
 // ===== Flight recorder =====
@@ -378,6 +400,12 @@ http.createServer((req, res) => {
     watch(hex);
     const points = history(hex, +url.searchParams.get('since') || 0, url.searchParams.has('raw'));
     return send(res, 200, JSON_TYPE, JSON.stringify({ hex, now: Date.now(), boot: BOOT, filled, count: points.length, points }));
+  }
+  const w = url.pathname.match(/^\/wx\/([A-Za-z]{4})$/);
+  if (w) {
+    metar(w[1].toUpperCase()).then(body => send(res, 200, JSON_TYPE, JSON.stringify(body)),
+                                   err => send(res, 502, JSON_TYPE, JSON.stringify({ error: err.message })));
+    return;
   }
   const m = url.pathname.match(/^\/adsb\/(hex|reg|callsign)\/([^/]+)$/);
   if (m) {

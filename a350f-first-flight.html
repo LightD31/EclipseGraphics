@@ -1380,6 +1380,8 @@
     syncHistory();
     setInterval(syncHistory, 60000);
   }
+  pollWx();
+  setInterval(pollWx, 300000);
 
   // ===== Phase =====
   function distHome(p) { return distKm(p.lat, p.lon, HOME.lat, HOME.lon); }
@@ -1520,6 +1522,63 @@
     }
   }
 
+  // ===== Toulouse weather (METAR through the relay), for the waiting time =====
+  var wx = null;
+  function pollWx() {
+    var base = relayBase();
+    if (!base) return;
+    getJSON(base.replace(/adsb$/, 'wx') + '/LFBO').then(function (j) { if (j && j.metar) wx = j.metar; })
+      .catch(function () { /* no weather set, that's all */ });
+  }
+  var CLOUDS = { FEW: 'quelques nuages', SCT: 'nuages épars', BKN: 'nuageux', OVC: 'couvert' };
+  function wxSegs() {
+    if (!wx || Date.now() / 1000 - wx.obsTime > 7200) return null; // none, or too old to show
+    var raw = ' ' + (wx.rawOb || '') + ' ';
+    var wind = wx.wspd === 0 ? 'calme' : (wx.wdir === 'VRB' ? 'variable' : pad(wx.wdir).padStart(3, '0') + '°') + ' · ' + wx.wspd + ' kt';
+    var gust = wx.wgst ? 'rafales ' + wx.wgst + ' kt' : kmh(wx.wspd || 0) + ' km/h';
+    var sky, vis = '';
+    var vm = / (\d{4}) /.exec(raw.replace(/ \d{5}(G\d\d)?KT /, ' '));
+    if (vm) vis = +vm[1] >= 9999 ? 'visibilité 10 km et plus' : 'visibilité ' + nf.format(+vm[1]) + ' m';
+    if (/ CAVOK /.test(raw)) { sky = 'dégagé'; vis = 'CAVOK'; }
+    else if (!wx.clouds || !wx.clouds.length || /^(CLR|SKC|NSC|NCD)$/.test(wx.clouds[0].cover)) sky = 'dégagé';
+    else {
+      var c = wx.clouds[0];
+      sky = (CLOUDS[c.cover] || c.cover) + (c.base != null ? ' à ' + nf.format(c.base) + ' ft' : '');
+    }
+    if (/CB/.test(raw)) sky += ' · cumulonimbus';
+    return [['Météo Toulouse', 'à ' + fmtTS(wx.obsTime * 1000), 'METAR LFBO'], ['Vent', wind, gust],
+            ['Température', Math.round(wx.temp) + ' °C', 'QNH ' + Math.round(wx.altim) + ' hPa'], ['Ciel', sky, vis]];
+  }
+  /* Write a set into the ticker; a different set slides the old one out,
+     then cascades the new one in. Web Animations layered over the reveal's
+     CSS animations (same properties), so neither disturbs the other. */
+  var tickerId = '', tickerSwap = 0;
+  var SEG_OUT = [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translate3d(-24px,0,0)' }];
+  function fillTicker(segs) {
+    segs.forEach(function (sg, k) {
+      setText($('k' + (k + 1)), sg[0]); setText($('v' + (k + 1)), sg[1]); setText($('u' + (k + 1)), sg[2]);
+    });
+  }
+  function showTicker(id, segs) {
+    if (id === tickerId) { if (!tickerSwap) fillTicker(segs); return; }
+    var first = !tickerId, els = document.querySelectorAll('#ticker .seg');
+    tickerId = id;
+    clearTimeout(tickerSwap);
+    tickerSwap = 0;
+    if (first || !bar.classList.contains('on') || !els[0].animate) { fillTicker(segs); return; }
+    var outs = [].map.call(els, function (e) {
+      return e.animate(SEG_OUT, { duration: 250, easing: 'ease-in', fill: 'forwards' });
+    });
+    tickerSwap = setTimeout(function () {
+      fillTicker(segs);
+      outs.forEach(function (a) { a.cancel(); });
+      [].forEach.call(els, function (e, k) {
+        e.animate(SEG_OUT.slice().reverse(), { duration: 350, delay: k * 80, easing: 'ease-out', fill: 'backwards' });
+      });
+      tickerSwap = 0;
+    }, 280);
+  }
+
   // Position in words (a350f-places.js), refreshed every 5 s at most
   var where = { at: 0, text: '' };
   function whereNow() {
@@ -1617,21 +1676,31 @@
       }
     }
 
-    // Ticker: the facts before take-off, the milestones after
-    var segs;
+    // Ticker: sets of four, rotating every 12 s while there is time to
+    // fill — the aircraft and the weather before take-off, the milestones
+    // and the earlier A350 first flights after landing — and the live
+    // milestones in flight.
+    var sets;
     if (!st.airSeen) {
-      segs = [['Décollage prévu', fmtTS(T0), ''], ['Avion', REG, 'MSN ' + MSN],
-              ['Moteurs', '2 × Trent XWB-97', 'Rolls-Royce'], ['Charge utile', '111 t', 'max.']];
+      sets = [[['Décollage prévu', fmtTS(T0), ''], ['Avion', REG, 'MSN ' + MSN],
+               ['Moteurs', '2 × Trent XWB-97', 'Rolls-Royce'], ['Charge utile', '111 t', 'max.']],
+              [['Longueur', '70,8 m', ''], ['Envergure', '64,75 m', ''],
+               ['Masse max. au décollage', '319 t', ''], ['Autonomie', '8 700 km', '4 700 NM']],
+              [['Porte cargo', '4,3 × 3,15 m', 'la plus large du marché'], ['Carburant', 'jusqu\'à −40 %', 'vs. la concurrence'],
+               ['Campagne d\'essais', '≈ 400 h de vol', '2 avions'], ['Livraisons', 'fin 2027', '']]];
+      if (wxSegs()) sets.push(wxSegs());
     } else if (ph === 'atterri') {
-      segs = [['Décollage', to ? fmtTS(to) : '–', ''], ['Atterrissage', fmtTS(st.landing), to ? fmtCoarse(st.landing - to) + ' de vol' : ''],
-              ['Altitude max', ft(st.altMax) + ' ft', m(st.altMax) + ' m'], ['Distance', nf.format(st.dist) + ' km', 'parcourus']];
+      var flown = to ? fmtCoarse(st.landing - to) : '–';
+      sets = [[['Décollage', to ? fmtTS(to) : '–', ''], ['Atterrissage', fmtTS(st.landing), to ? flown + ' de vol' : ''],
+               ['Altitude max', ft(st.altMax) + ' ft', m(st.altMax) + ' m'], ['Distance', nf.format(st.dist) + ' km', 'parcourus']],
+              [['Premier vol A350-900', '4 h 05', '14 juin 2013'], ['Premier vol A350-1000', '4 h 18', '24 nov. 2016'],
+               ['Premier vol A350F', flown, 'aujourd\'hui'], ['Vitesse max', Math.round(st.gsMax) + ' kt', kmh(st.gsMax) + ' km/h']]];
     } else {
-      segs = [['Décollage', to ? fmtT(to) : '–', ''], ['Altitude max', ft(st.altMax) + ' ft', m(st.altMax) + ' m'],
-              ['Vitesse max', Math.round(st.gsMax) + ' kt', kmh(st.gsMax) + ' km/h'], ['Distance', nf.format(st.dist) + ' km', 'parcourus']];
+      sets = [[['Décollage', to ? fmtT(to) : '–', ''], ['Altitude max', ft(st.altMax) + ' ft', m(st.altMax) + ' m'],
+               ['Vitesse max', Math.round(st.gsMax) + ' kt', kmh(st.gsMax) + ' km/h'], ['Distance', nf.format(st.dist) + ' km', 'parcourus']]];
     }
-    segs.forEach(function (sg, k) {
-      setText($('k' + (k + 1)), sg[0]); setText($('v' + (k + 1)), sg[1]); setText($('u' + (k + 1)), sg[2]);
-    });
+    var setId = (!st.airSeen ? 'pre' : ph === 'atterri' ? 'post' : 'air') + Math.floor(Date.now() / 12000) % sets.length;
+    showTicker(setId, sets[Math.floor(Date.now() / 12000) % sets.length]);
 
     // Progress: flight time against the planned duration
     var p = to ? ((st.landing || t) - to) / DUR : 0;

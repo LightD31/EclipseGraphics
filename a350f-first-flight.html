@@ -540,7 +540,10 @@
        card    on | off | toggle         the corner card
        map     track | follow | toggle   frame the whole track, or ride with
                                          the aircraft (fullscreen map)
-     air.on.full / air.on.lower land on air in a named layout in one step. */
+     air.on.full / air.on.lower land on air in a named layout in one step.
+     Anything else (schedule, take-off, headline, mode, units, banners) is
+     about the flight, not the view: it goes to the flight script below, with
+     the event's other fields (a "text", for instance). */
   function isOn() { return bar.classList.contains('on'); }
   function isFs() { return bar.classList.contains('fs'); }
   function setState(name, want) {
@@ -548,7 +551,8 @@
     if (isOn()) switchView(function () { bar.classList.toggle(name, want); });
     else bar.classList.toggle(name, want);
   }
-  function command(cmd) {
+  function command(cmd, data) {
+    cmd = String(cmd || '');
     switch (cmd) {
       case 'air.on':     if (!isOn()) playIn(); break;
       case 'air.off':    if (isOn()) playOut(); break;
@@ -571,6 +575,8 @@
       case 'map.track':     bar.classList.remove('follow'); break;
       case 'map.follow':    bar.classList.add('follow'); break;
       case 'map.toggle':    bar.classList.toggle('follow'); break;
+      default:
+        if (window.a350fDataCommand) window.a350fDataCommand(cmd, data || {});
     }
   }
   window.a350fCommand = command;
@@ -665,7 +671,7 @@
         }
       } else if (msg.op === 5 && msg.d.eventType === 'CustomEvent') {
         var d = msg.d.eventData || {};
-        if (d.a350f) command(d.a350f);
+        if (d.a350f) command(d.a350f, d);
       }
     };
     ws.onclose = function () { setTimeout(connectOBS, 5000); };
@@ -723,6 +729,73 @@
       .formatToParts(new Date(guess)).forEach(function (x) { p[x.type] = x.value; });
     var asParis = Date.parse(p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute + ':' + p.second + 'Z');
     return guess - (asParis - guess);
+  }
+  // A time typed by the operator ("9:45", "10:34:12") on the flight day
+  function parseHM(v) {
+    var m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(v);
+    if (!m || +m[1] > 23 || +m[2] > 59 || +(m[3] || 0) > 59) return null;
+    return parisTime(DAY, pad(+m[1]) + ':' + m[2] + ':' + (m[3] || '00'));
+  }
+
+  // ===== Operator overrides =====
+  // Set at run time from Companion or the status page, instead of editing
+  // the source URL and reloading it on air: a new take-off time when the
+  // flight slips, the actual take-off when the page missed it, a headline of
+  // the operator's own, a neutral wording. Kept per aircraft and day, and
+  // shared by every browser source of this page (the lower third and the
+  // fullscreen may be two sources): each receives the command, and the
+  // storage event brings any that missed it in step.
+  var CTL_KEY = 'a350f:ctl:' + (DEMO ? 'demo' : REG + ':' + DAY);
+  var ctl = { t0: null, takeoff: null, headline: '', mode: 'auto', units: null };
+  function loadCtl() {
+    try { Object.assign(ctl, JSON.parse(localStorage.getItem(CTL_KEY) || '{}')); } catch (e) {}
+  }
+  function saveCtl() {
+    try { localStorage.setItem(CTL_KEY, JSON.stringify(ctl)); } catch (e) {}
+  }
+  try { if (DEMO || params.has('reset')) localStorage.removeItem(CTL_KEY); } catch (e) {}
+  loadCtl();
+  window.addEventListener('storage', function (e) {
+    if (e.key === CTL_KEY) { loadCtl(); ctlChanged(); }
+  });
+  function schedTime() { return ctl.t0 || T0; }
+  /* t0.HH:MM | t0.+N | t0.-N | t0.reset          scheduled take-off
+     takeoff.now | takeoff.HH:MM[:SS] | takeoff.auto   actual take-off
+     headline.<TEXT> | headline.set (+ "text") | headline.auto
+     mode.neutral | mode.auto | mode.toggle        factual wording only */
+  var dataCommands = {
+    t0: function (v) {
+      if (v === 'reset') ctl.t0 = null;
+      else if (/^[+-]\d+$/.test(v)) ctl.t0 = schedTime() + parseInt(v, 10) * 60000;
+      else if (parseHM(v) != null) ctl.t0 = parseHM(v);
+      else return false;
+    },
+    takeoff: function (v) {
+      if (v === 'auto') ctl.takeoff = null;
+      else if (v === 'now') ctl.takeoff = now();
+      else if (parseHM(v) != null) ctl.takeoff = parseHM(v);
+      else return false;
+    },
+    headline: function (v, data) {
+      if (v === 'auto') ctl.headline = '';
+      else ctl.headline = String(v === 'set' ? data.text || '' : v).trim().slice(0, 90);
+    },
+    mode: function (v) {
+      if (v === 'toggle') v = ctl.mode === 'neutral' ? 'auto' : 'neutral';
+      if (v !== 'neutral' && v !== 'auto') return false;
+      ctl.mode = v;
+    }
+  };
+  window.a350fDataCommand = function (cmd, data) {
+    var dot = cmd.indexOf('.');
+    var fn = dataCommands[dot < 0 ? cmd : cmd.slice(0, dot)];
+    if (!fn || fn(dot < 0 ? '' : cmd.slice(dot + 1), data || {}) === false) return;
+    saveCtl();
+    ctlChanged();
+  };
+  function ctlChanged() {
+    profDirty = true;
+    updateText();
   }
 
   // --- Formatting ---
@@ -810,7 +883,8 @@
   var lastPhase = '';
   var sourceName = '', sourceErr = false;
 
-  function takeoffTime() { return TAKEOFF_OVERRIDE || st.takeoff; }
+  // the operator's word first, then ?takeoff=, then what the data showed
+  function takeoffTime() { return ctl.takeoff || TAKEOFF_OVERRIDE || st.takeoff; }
 
   /* A report (readsb / ADSBx v2 fields) → a compact sample:
      t (ms), lat, lon, a: altitude in ft (null on the ground or unknown),
@@ -1153,6 +1227,11 @@
     atterri:   ['PREMIER VOL RÉUSSI !', 'Premier vol réussi !'],
     atterri2:  ['L\'A350F S\'EST POSÉ', 'L\'A350F s\'est posé']
   };
+  // mode.neutral: the same facts, none of the celebration
+  var NEUTRAL = {
+    decollage: ['L\'A350F A DÉCOLLÉ', 'L\'A350F a décollé'],
+    atterri:   HEADLINES.atterri2
+  };
 
   // ===== Text: headline, timer, strap, flight-data panel, ticker =====
   var el = {};
@@ -1185,13 +1264,13 @@
   function fb(name, value, force) { if (window.a350fFeedback) a350fFeedback(name, value, force); }
   function pushStatics() {
     fb('reg', REG, true);
-    fb('t_sched', fmtTS(T0), true);
+    fb('t_sched', fmtTS(schedTime()), true);
   }
   pushStatics();
   setInterval(pushStatics, 60000);
 
   function updateText() {
-    var t = now();
+    var t = now(), T0 = schedTime(); // the operator may have moved it
     var ph = phaseOf(t);
     lastPhase = ph;
     var to = takeoffTime();
@@ -1199,7 +1278,9 @@
     var hk = ph;
     if (ph === 'attente' && t >= T0) hk = 'attente2';
     if (ph === 'atterri' && !live.near && distHome(live) > 10) hk = 'atterri2';
-    setText(el.status, HEADLINES[hk][0]);
+    var hl = (ctl.mode === 'neutral' && NEUTRAL[hk]) || HEADLINES[hk];
+    // the operator's own headline, when set, replaces the automatic one
+    setText(el.status, ctl.headline || hl[0]);
 
     // Timer: countdown to the scheduled take-off, then flight time
     var label, value, hLabel;
@@ -1306,7 +1387,10 @@
     fb('time', label === 'EN VOL DEPUIS' || label === 'DURÉE DU VOL'
       ? (to ? fmtCoarse((st.landing && ph === 'atterri' ? st.landing : t) - to) : '')
       : t < T0 ? fmtCoarse(T0 - t) : '');
-    fb('status', HEADLINES[hk][1]);
+    fb('status', ctl.headline || hl[1]);
+    fb('headline', ctl.headline ? 'custom' : 'auto');
+    fb('mode', ctl.mode);
+    fb('t_sched', fmtTS(T0));
     fb('label', hLabel);
     fb('alt', !live ? '' : live.gnd ? 'au sol' : ft(live.alt) + ' ft');
     fb('alt_m', !live || live.gnd ? '' : m(live.alt) + ' m');
@@ -1609,7 +1693,7 @@
     }
     if (box.r - box.l < 60 || box.b - box.t < 40) { profSvg.innerHTML = ''; return; }
     profSvg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-    var t = now(), to = takeoffTime();
+    var t = now(), to = takeoffTime(), T0 = schedTime();
     // From 5 min before take-off (or before the first airborne point, when
     // the page joined mid-flight); nothing but the axes until then.
     var from = to;

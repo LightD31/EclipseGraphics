@@ -1228,7 +1228,17 @@
   if (RELAY) SOURCES.push({ name: 'relais', base: RELAY.replace(/\/+$/, '') + '/adsb' });
   else if (/^https?:$/.test(location.protocol)) SOURCES.push({ name: 'relais', base: 'adsb' });
   SOURCES.push({ name: 'adsb.lol', direct: 'lol' }, { name: 'adsb.fi', direct: 'fi' });
-  var srcIdx = 0;
+  var DIRECT_MS = 5000; // never poll the APIs themselves more often than this
+  var srcIdx = 0, polledDirect = false; // the API that last answered directly
+  // The relay takes turns between the APIs: every one that answered in the
+  // last 2 minutes is credited ("adsb.lol + adsb.fi").
+  var srcSeen = {};
+  function credit(name) {
+    var t = Date.now(), rank = function (n) { return SOURCES.map(function (s) { return s.name; }).indexOf(n); };
+    srcSeen[name] = t;
+    return Object.keys(srcSeen).filter(function (n) { return t - srcSeen[n] < 120000; })
+      .sort(function (a, b) { return rank(a) - rank(b); }).join(' + ');
+  }
   function srcUrl(s, kind, val) {
     val = encodeURIComponent(val);
     if (s.base) return s.base + '/' + kind + '/' + val;
@@ -1240,21 +1250,31 @@
     var timer = ctl && setTimeout(function () { ctl.abort(); }, 7000);
     return fetch(url, { cache: 'no-store', signal: ctl && ctl.signal }).then(function (r) {
       clearTimeout(timer);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) { var err = new Error('HTTP ' + r.status); err.status = r.status; throw err; }
       return r.json();
     }, function (e) { clearTimeout(timer); throw e; });
   }
-  // Try the sources from the one that last worked, and stick to the winner.
+  // The relay first, always; then the APIs directly, from the one that last
+  // worked. When the relay answers that its upstreams are failing (502:
+  // rate-limited or down), asking them from here as well would only add to
+  // their load: the page waits for the relay instead.
   function query(kind, val) {
+    var direct = SOURCES.filter(function (s) { return s.direct; });
+    var order = SOURCES.filter(function (s) { return s.base; })
+      .concat(direct.slice(srcIdx), direct.slice(0, srcIdx));
     var i = 0;
     function attempt() {
-      if (i >= SOURCES.length) return Promise.reject(new Error('no source'));
-      var k = (srcIdx + i) % SOURCES.length, s = SOURCES[k];
+      if (i >= order.length) return Promise.reject(new Error('no source'));
+      var s = order[i];
+      if (s.direct) polledDirect = true;
       return getJSON(srcUrl(s, kind, val)).then(function (j) {
-        srcIdx = k;
-        sourceName = j.src || s.name; // the relay names the upstream it used
+        if (s.direct) srcIdx = direct.indexOf(s);
+        sourceName = credit(j.src || s.name); // the relay names the upstream it used
         return j;
-      }, function () { i++; return attempt(); });
+      }, function (e) {
+        if (s.base && e.status === 502) throw e;
+        i++; return attempt();
+      });
     }
     return attempt();
   }
@@ -1298,6 +1318,7 @@
   var pollN = 0;
   function poll() {
     pollN++;
+    polledDirect = false;
     // Mostly by transponder address; every fifth poll without a fresh fix,
     // by registration (and callsign, if given), in case the address differs.
     var kind = 'hex', val = HEX;
@@ -1331,7 +1352,7 @@
       ingest(a, (upNow || Date.now()) - seen * 1000, (j._age || 0) + seen * 1000);
     }, function () {
       sourceErr = true;
-    }).then(function () { setTimeout(poll, POLL_MS); });
+    }).then(function () { setTimeout(poll, polledDirect ? Math.max(POLL_MS, DIRECT_MS) : POLL_MS); });
   }
 
   // ===== Demo: a synthetic first flight, fed through the same pipeline =====

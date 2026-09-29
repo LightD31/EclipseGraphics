@@ -1,0 +1,32 @@
+/* ===== Flash: one message at a time ===== */
+.gfx-flash { --fl-tag: var(--c-accent); z-index: 20; }
+.fl-pos { position: absolute; }
+.fl-box {
+  display: flex; align-items: stretch; height: calc(52 * var(--u)); white-space: nowrap;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); border-radius: var(--radius); overflow: hidden;
+}
+.fl-tag {
+  display: flex; align-items: center; padding: 0 calc(18 * var(--u));
+  background: var(--fl-tag); color: var(--c-onAccent); font-size: calc(19 * var(--u)); letter-spacing: 1px;
+}
+.fl-body {
+  display: flex; align-items: center; gap: calc(16 * var(--u)); padding: 0 calc(26 * var(--u));
+  background: var(--c-base); color: var(--c-onBase);
+}
+.fl-title { font-size: calc(27 * var(--u)); }
+.fl-sub { font-size: calc(19 * var(--u)); color: var(--c-onBase-62); font-variant-numeric: tabular-nums; }
+.gfx-flash[data-body=light] .fl-body { background: var(--c-surface); color: var(--c-onSurface); }
+.gfx-flash[data-body=light] .fl-sub { color: var(--c-onSurface-60); }
+
+/* Glued to a bandeau: just above its strap in the lower third… */
+.gfx-flash.anchored { position: absolute; inset: auto; left: 0; bottom: 0; width: 100%; height: 0; overflow: visible; }
+.gfx-flash.anchored .fl-pos { left: 0 !important; right: auto !important; top: auto !important; bottom: 10px !important; transform: none !important; }
+/* …under the caption in the fullscreen, where the navy of a map would swallow
+   a dark body: the light one there */
+.gfx-bandeau:not([data-layout=lower]) .gfx-flash.anchored .fl-pos { top: 0 !important; bottom: auto !important; }
+.gfx-bandeau:not([data-layout=lower]) .gfx-flash.anchored .fl-box { height: 66px; }
+.gfx-bandeau:not([data-layout=lower]) .gfx-flash.anchored .fl-tag { font-size: 21px; padding: 0 22px; }
+.gfx-bandeau:not([data-layout=lower]) .gfx-flash.anchored .fl-title { font-size: 34px; }
+.gfx-bandeau:not([data-layout=lower]) .gfx-flash.anchored .fl-sub { font-size: 22px; }
+.gfx-bandeau:not([data-layout=lower]) .gfx-flash.anchored[data-body=auto] .fl-body { background: var(--c-surface); color: var(--c-onSurface); }
+.gfx-bandeau:not([data-layout=lower]) .gfx-flash.anchored[data-body=auto] .fl-sub { color: var(--c-onSurface-60); }

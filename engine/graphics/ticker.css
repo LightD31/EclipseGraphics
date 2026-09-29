@@ -1,0 +1,33 @@
+/* ===== Défilant: a band of messages ===== */
+.gfx-ticker { --tk-band: var(--c-base); --tk-tag: var(--c-accent); }
+.tk-bar {
+  position: absolute; left: var(--mx, 0px); right: var(--mx, 0px); bottom: var(--my, 0px);
+  display: flex; align-items: stretch; height: calc(58 * var(--u));
+  box-shadow: var(--shadow); border-radius: var(--radius); overflow: hidden;
+}
+.gfx-ticker[data-edge=top] .tk-bar { bottom: auto; top: var(--my, 0px); }
+.tk-tag {
+  flex: 0 0 auto; display: flex; align-items: center; padding: 0 calc(26 * var(--u));
+  background: var(--tk-tag); background-image: var(--gloss); color: var(--c-onAccent);
+  font-size: calc(24 * var(--u)); position: relative; z-index: 1;
+}
+.tk-band {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch;
+  background: var(--tk-band); color: var(--c-onBase);
+}
+.tk-view { position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden; display: flex; align-items: center; }
+.tk-track { display: flex; align-items: center; white-space: nowrap; will-change: transform; padding-left: calc(26 * var(--u)); }
+.gfx-ticker[data-mode=crawl] .tk-track { padding-left: 0; }
+.tk-item { font-size: calc(25 * var(--u)); font-weight: var(--w-text); }
+.gfx-ticker[data-mode=crawl] .tk-item { padding: 0 calc(26 * var(--u)); }
+.gfx-ticker[data-mode=rotate] .tk-item { font-weight: var(--w-strong); }
+.tk-sep { color: var(--tk-tag); font-size: calc(22 * var(--u)); }
+.tk-seg { display: inline-flex; align-items: baseline; gap: calc(10 * var(--u)); padding-right: calc(34 * var(--u)); font-size: calc(23 * var(--u)); }
+.tk-seg .lbl { font-weight: var(--w-strong); text-transform: uppercase; }
+.tk-seg .val { font-variant-numeric: tabular-nums; }
+.tk-seg .sub { font-size: calc(18 * var(--u)); color: var(--c-onBase-55); }
+.tk-seg span:empty { display: none; }
+.tk-clock {
+  flex: 0 0 auto; display: flex; align-items: center; padding: 0 calc(26 * var(--u));
+  background: var(--c-base2); font-size: calc(26 * var(--u));
+}

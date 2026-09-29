@@ -1,0 +1,67 @@
+/* Module "eclipse": the sky and the true-scale view, wherever the bandeau
+   puts them — data-place on their slot says where:
+     panel   the lower third's square: the Sun and its bite, nothing else
+     canvas  the whole screen (fullscreen layout)
+     card    the fullscreen's corner card */
+
+/* ===== Sky ===== */
+.ecl-sky { position: absolute; inset: 0; }
+.ecl-inner { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.ecl-chart { display: none; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ecl-chart text { font-family: var(--f-text); font-variant-numeric: tabular-nums; }
+/* the sky pans behind the discs on the same 1 s glide as the discs */
+.ecl-pan, .ecl-alt { transition: transform 1s linear; }
+.ecl-skywrap { position: relative; width: calc(172 * var(--u)); height: calc(172 * var(--u)); }
+.ecl-corona {
+  position: absolute; inset: -18px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.4) 30%, rgba(200, 215, 255, 0.15) 55%, transparent 72%);
+  opacity: 0; transition: opacity 1s;
+}
+.ecl-moonwrap { display: none; }
+
+[data-place=canvas] > .ecl-sky .ecl-chart, [data-place=card] > .ecl-sky .ecl-chart { display: block; }
+[data-place=canvas] > .ecl-sky .ecl-chart { animation: gfxAppear 0.55s ease-out 0.25s backwards; }
+/* the discs ride the trajectory (left/top from the camera, 1 s linear:
+   a constant glide between the once-a-second updates) */
+[data-place=canvas] > .ecl-sky .ecl-skywrap, [data-place=card] > .ecl-sky .ecl-skywrap,
+[data-place=canvas] > .ecl-sky .ecl-moonwrap, [data-place=card] > .ecl-sky .ecl-moonwrap {
+  display: block; position: absolute; width: 16vw; height: 16vw; margin-left: -8vw; margin-top: -8vw;
+  transition: left 1s linear, top 1s linear,
+              width 0.7s cubic-bezier(0.22, 1, 0.36, 1), height 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+              margin 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-place=canvas] > .ecl-sky .ecl-skywrap, [data-place=card] > .ecl-sky .ecl-skywrap { left: var(--sunX, 37.5%); top: var(--sunY, 52%); }
+[data-place=canvas] > .ecl-sky .ecl-moonwrap, [data-place=card] > .ecl-sky .ecl-moonwrap { left: var(--moonX, 37.5%); top: var(--moonY, 52%); }
+/* the day's sky (before the eclipse evening) covers ~230°: small discs */
+[data-place=canvas] > .ecl-sky.wide .ecl-skywrap, [data-place=card] > .ecl-sky.wide .ecl-skywrap,
+[data-place=canvas] > .ecl-sky.wide .ecl-moonwrap, [data-place=card] > .ecl-sky.wide .ecl-moonwrap {
+  width: 5vw; height: 5vw; margin-left: -2.5vw; margin-top: -2.5vw;
+}
+/* In the corner card: the whole map, scaled as one block (its discs are in
+   vw and placed in %, so they ride along); its lettering would be too small
+   to read, the card's header names it */
+[data-place=card] > .ecl-sky { position: relative; height: calc(var(--card-w, 21vw) * 9 / 16); overflow: hidden; }
+[data-place=card] > .ecl-sky .ecl-inner { inset: auto; left: 0; top: 0; width: 100vw; height: 100vh; transform-origin: 0 0; }
+[data-place=card] > .ecl-sky .ecl-chart text { display: none; }
+
+/* ===== True scale ===== */
+.ecl-real { position: absolute; inset: 0; display: flex; flex-direction: column; }
+[data-place=card] > .ecl-real { position: relative; }
+.ecl-rvhead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 14px 4px; color: var(--c-onBase); }
+.ecl-rvhead b { font-size: 17px; font-weight: var(--w-strong); letter-spacing: 0.5px; }
+.ecl-rvhead span { font-size: 15px; color: var(--c-onBase-62); font-variant-numeric: tabular-nums; }
+.ecl-rvsvg { display: block; width: 100%; height: var(--card-w, 21vw); }
+[data-place=panel] > .ecl-real .ecl-rvhead { display: none; }
+[data-place=panel] > .ecl-real .ecl-rvsvg { height: 100%; }
+/* On the canvas: fills the width and crops the height (slice), its header
+   becomes the scene's caption, top-left, sized like the sky map's */
+[data-place=canvas] > .ecl-real { animation: gfxAppear 0.55s ease-out 0.25s backwards; }
+[data-place=canvas] > .ecl-real .ecl-rvhead { justify-content: flex-start; gap: 1.15vw; padding: 1.6vw 0 0 4.7vw; }
+[data-place=canvas] > .ecl-real .ecl-rvhead b { font-size: 1.35vw; letter-spacing: 1px; }
+[data-place=canvas] > .ecl-real .ecl-rvhead span { font-size: 1.05vw; }
+[data-place=canvas] > .ecl-real .ecl-rvsvg { flex: 1 1 auto; height: auto; min-height: 0; }
+/* one tick of linear easing turns the once-a-second recompute into a glide */
+.ecl-rvsvg circle, .ecl-rvsvg rect {
+  transition: cx var(--rvstep, 1s) linear, cy var(--rvstep, 1s) linear, r var(--rvstep, 1s) linear,
+              y var(--rvstep, 1s) linear, height var(--rvstep, 1s) linear;
+}

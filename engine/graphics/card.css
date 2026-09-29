@@ -1,0 +1,61 @@
+/* ===== Carte: full screen =====
+   Stacked like the bandeau: the light strap on top (kicker), the accent
+   block (title, and the countdown when waiting), a navy strap under it
+   (subtitle); key figures in the recap's cells. */
+.gfx-card { --cd-bg: var(--c-base); --cd-band: var(--c-accent); --cd-dim: 0.35; }
+.cd-bg { position: absolute; inset: 0; overflow: hidden; background: var(--cd-bg); }
+.gfx-card[data-bg=gradient] .cd-bg {
+  background:
+    radial-gradient(ellipse 70% 60% at 85% 110%, var(--c-accent-deep) 0%, transparent 70%),
+    radial-gradient(ellipse 120% 90% at 15% 10%, var(--c-base2) 0%, var(--c-base) 65%);
+}
+.gfx-card[data-bg=none] .cd-bg { background: transparent; }
+.gfx-card[data-bg=image] .cd-bg, .gfx-card[data-bg=video] .cd-bg { background: #000; }
+.cd-media, .cd-media img, .cd-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cd-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, var(--cd-dim)); }
+.gfx-card[data-bg=color] .cd-dim, .gfx-card[data-bg=gradient] .cd-dim { display: none; }
+
+.cd-inner {
+  position: absolute; left: 150px; right: 150px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: flex-start;
+}
+.gfx-card[data-align=center] .cd-inner { align-items: center; text-align: center; }
+.cd-kicker {
+  background: var(--c-surface); color: var(--c-highlight);
+  font-size: calc(30 * var(--u)); line-height: 1; padding: calc(12 * var(--u)) calc(22 * var(--u));
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.cd-titlebox {
+  max-width: 100%; background: var(--cd-band); background-image: var(--gloss); color: var(--c-onAccent);
+  padding: calc(26 * var(--u)) calc(44 * var(--u)) calc(22 * var(--u)); border-radius: 0 var(--radius) 0 0;
+  display: flex; flex-direction: column;
+}
+.gfx-card[data-align=center] .cd-titlebox { align-items: center; border-radius: var(--radius) var(--radius) 0 0; }
+.cd-title { font-size: calc(120 * var(--u)); line-height: 1.02; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 3px 0 rgba(0, 0, 0, 0.12); }
+.cd-sub {
+  background: var(--c-base2); color: var(--c-onBase);
+  font-size: calc(38 * var(--u)); padding: calc(14 * var(--u)) calc(44 * var(--u)); max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 0 0 var(--radius) var(--radius);
+}
+.cd-count { display: flex; flex-direction: column; margin-top: calc(18 * var(--u)); }
+.cd-clabel { font-size: calc(30 * var(--u)); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
+.cd-cvalue { font-size: calc(210 * var(--u)); line-height: 0.95; }
+.gfx-card[data-align=center] .cd-count { align-items: center; }
+.cd-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); width: 100%;
+  margin-top: calc(28 * var(--u)); background: var(--c-base-95); border-radius: var(--radius); overflow: hidden;
+}
+.cd-fig { padding: calc(22 * var(--u)) calc(30 * var(--u)) calc(24 * var(--u)); border: 1px solid var(--c-onBase-12); text-align: left; }
+.cd-fv { font-size: calc(76 * var(--u)); line-height: 1.02; color: var(--c-onBase); white-space: nowrap; }
+.cd-fk { margin-top: calc(6 * var(--u)); font-size: calc(22 * var(--u)); font-weight: var(--w-strong); letter-spacing: 1px; text-transform: uppercase; color: var(--c-onBase-72); }
+.cd-fs { font-size: calc(20 * var(--u)); color: var(--c-onBase-55); }
+.cd-fs:empty { display: none; }
+.gfx-card[data-template=message] .cd-titlebox { border-radius: var(--radius); }
+.gfx-card[data-template=message] .cd-inner { align-items: center; text-align: center; }
+.cd-line { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; background: var(--cd-band); }
+.gfx-card[data-bg=none] .cd-line { display: none; }
+.cd-logo { position: absolute; height: calc(110 * var(--u)); width: auto; filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.35)); }
+.cd-logo[data-corner=tl] { top: 60px; left: 70px; }
+.cd-logo[data-corner=tr] { top: 60px; right: 70px; }
+.cd-logo[data-corner=bl] { bottom: 70px; left: 70px; }
+.cd-logo[data-corner=br] { bottom: 70px; right: 70px; }

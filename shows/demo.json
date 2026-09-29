@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "title": "Démonstration",
+  "timezone": "Europe/Paris",
+  "theme": { "preset": "direct" },
+  "motion": { "preset": "direct" },
+  "modules": {},
+  "variables": [
+    { "name": "sujet", "label": "Sujet du direct", "value": "Le grand direct du soir" },
+    { "name": "lieu", "label": "Lieu", "value": "Toulouse" },
+    { "name": "score", "label": "Score", "value": "0" }
+  ],
+  "graphics": [
+    {
+      "id": "bandeau",
+      "type": "bandeau",
+      "name": "Bandeau principal",
+      "fields": {
+        "band": {
+          "headline": "{{var.sujet}}",
+          "tag": "",
+          "timer": { "mode": "countdown", "label": "Début dans", "target": "21:00", "after": "En cours", "afterLabel": "Depuis 21:00", "style": "auto" }
+        },
+        "strap": {
+          "enabled": true,
+          "main": "Texte en gras",
+          "second": "",
+          "accent": "{{var.lieu}}",
+          "info": "{{day|cap}} {{date}}",
+          "badge": true,
+          "badgeText": "En direct",
+          "badgeIdle": ""
+        },
+        "ticker": {
+          "enabled": true,
+          "source": "static",
+          "sets": [
+            { "segments": [
+              { "label": "À suivre", "value": "21:00", "sub": "le grand débat" },
+              { "label": "Invités", "value": "3", "sub": "en plateau" },
+              { "label": "Score", "value": "{{var.score}}", "sub": "" }
+            ] },
+            { "segments": [
+              { "label": "Météo", "value": "18 °C", "sub": "ciel dégagé" },
+              { "label": "Vent", "value": "12 km/h", "sub": "d'ouest" },
+              { "label": "Coucher du soleil", "value": "19:48", "sub": "" }
+            ] }
+          ],
+          "rotate": 12,
+          "clock": true,
+          "clockText": "{{clock}}"
+        },
+        "timeline": {
+          "enabled": true,
+          "mode": "range",
+          "from": "20:00",
+          "to": "23:00",
+          "marks": [ { "at": "21:00" }, { "at": "22:00" } ]
+        },
+        "panel": { "source": "image", "image": "logo-exemple.svg", "fit": "contain" },
+        "card": { "source": "none", "width": 24 },
+        "column": { "sources": [] },
+        "layout": { "width": "full", "mx": 0, "my": 0 }
+      },
+      "motion": {}
+    },
+    {
+      "id": "flash",
+      "type": "flash",
+      "name": "Flash",
+      "fields": {
+        "anchor": "bandeau:bandeau",
+        "duration": 8,
+        "defaultTag": "Info",
+        "presets": [
+          { "tag": "Bienvenue", "title": "Bienvenue dans le direct", "sub": "{{var.lieu}}", "dur": "" },
+          { "tag": "Info", "title": "Pause de cinq minutes", "sub": "on revient tout de suite", "dur": "" }
+        ]
+      },
+      "motion": {}
+    },
+    {
+      "id": "synthe",
+      "type": "synthe",
+      "name": "Noms",
+      "fields": {
+        "entries": [
+          { "name": "Camille Martin", "role": "Présentation", "extra": "", "image": "" },
+          { "name": "Alex Bernard", "role": "Astrophysicien, invité", "extra": "Invité", "image": "" },
+          { "name": "Sam Durand", "role": "En direct de {{var.lieu}}", "extra": "", "image": "" }
+        ],
+        "autoOut": 8,
+        "style": "empile",
+        "pos": { "anchor": "bl", "x": 96, "y": 120 }
+      },
+      "motion": {}
+    },
+    {
+      "id": "defilant",
+      "type": "ticker",
+      "name": "Défilant",
+      "fields": {
+        "mode": "crawl",
+        "items": [
+          { "text": "Bienvenue dans le direct du soir, en direct de {{var.lieu}}" },
+          { "text": "Posez vos questions dans le chat" },
+          { "text": "Il est {{clock.hm}}" }
+        ],
+        "tag": "Info",
+        "edge": "top",
+        "clock": true
+      },
+      "motion": {}
+    },
+    {
+      "id": "logo",
+      "type": "bug",
+      "name": "Logo et horloge",
+      "fields": {
+        "logo": "logo-exemple.svg",
+        "logoHeight": 72,
+        "live": { "enabled": true, "text": "En direct" },
+        "clock": { "enabled": true, "style": "hm", "label": "" },
+        "count": { "mode": "none" },
+        "pos": { "anchor": "tr", "x": 56, "y": 96 }
+      },
+      "motion": {}
+    },
+    {
+      "id": "titre",
+      "type": "card",
+      "name": "Carte titre",
+      "fields": {
+        "template": "titre",
+        "kicker": "En direct",
+        "title": "{{var.sujet}}",
+        "subtitle": "En direct de {{var.lieu}}",
+        "logo": "logo-exemple.svg",
+        "bg": { "type": "gradient" }
+      },
+      "motion": {}
+    },
+    {
+      "id": "attente",
+      "type": "card",
+      "name": "Attente",
+      "fields": {
+        "template": "attente",
+        "kicker": "Bientôt",
+        "title": "Le direct commence bientôt",
+        "subtitle": "{{var.sujet}}",
+        "count": { "mode": "countdown", "label": "Début dans", "target": "21:00", "after": "C'est parti !", "style": "auto" },
+        "bg": { "type": "gradient" }
+      },
+      "motion": {}
+    },
+    {
+      "id": "chiffres",
+      "type": "card",
+      "name": "Chiffres clés",
+      "fields": {
+        "template": "chiffres",
+        "kicker": "Bilan",
+        "title": "La soirée en chiffres",
+        "subtitle": "{{date}}",
+        "figures": [
+          { "value": "3 h 12", "label": "de direct", "sub": "" },
+          { "value": "12 400", "label": "spectateurs", "sub": "au plus fort" },
+          { "value": "{{var.score}}", "label": "score final", "sub": "" }
+        ],
+        "bg": { "type": "gradient" }
+      },
+      "motion": {}
+    }
+  ]
+}

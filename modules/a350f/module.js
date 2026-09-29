@@ -1,5 +1,5 @@
 /* Module "a350f" — the first flight of the Airbus A350F tracked live over
-   ADS-B: the port of a350f-first-flight.html (and its relay) onto the
+   ADS-B: the first-flight overlay of September 2026 (and its relay), on the
    overlay engine.
 
    Read by the server (settings, commands, the old Companion event key), the
@@ -31,7 +31,7 @@
           'altitude, vitesse, position en mots, météo de Toulouse ; visuels « carte en direct » et « profil de vol », ' +
           'colonnes « données de vol » et « bilan ».',
     legacyKeys: ['a350f'],
-    client: ['/a350f-places.js', 'client.js'],
+    client: ['places.js', 'client.js'],
     css: ['client.css'],
     panel: 'panel.js',
     visuals: {
@@ -63,7 +63,7 @@
       ] },
       { title: 'Données', fields: [
         { key: 'relay', type: 'text', label: 'Relais ADS-B', default: '', placeholder: 'intégré à ce serveur',
-          help: 'vide : le relais de ce serveur ; ou l\'URL d\'un autre (par ex. http://127.0.0.1:8787 pour un a350f-relay.js déjà lancé)' },
+          help: 'vide : le relais de ce serveur ; ou l\'URL d\'un autre serveur d\'habillage qui suit le même avion (par ex. http://192.168.1.20:8787)' },
         { key: 'poll', type: 'number', label: 'Interroger le relais toutes les', default: 2, min: 1, max: 30, unit: 's' }
       ] },
       { title: 'Carte', fields: [

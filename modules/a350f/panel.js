@@ -1,4 +1,4 @@
-/* Module "a350f" in the panel: what a350f-status.html showed — the data's
+/* Module "a350f" in the panel: what the old status page showed — the data's
    health, the flight's state and events — and every operator control
    (schedule, actual take-off, headline, wording, units) a click away. */
 (function () {

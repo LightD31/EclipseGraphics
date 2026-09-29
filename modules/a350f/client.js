@@ -1,6 +1,5 @@
-/* Module "a350f", output side: the A350F first-flight overlay's live flight
-   (a350f-first-flight.html), as variables, two visuals and two columns for
-   the bandeau.
+/* Module "a350f", output side: the A350F first-flight overlay's live
+   flight, as variables, two visuals and two columns for the bandeau.
 
    The flight: every ADS-B report (through the relay: this server, or the
    one set in the settings) goes into a list of samples — kept in local
@@ -621,7 +620,7 @@
               ['Température', Math.round(wx.temp) + ' °C', 'QNH ' + Math.round(wx.altim) + ' hPa'], ['Ciel', sky, vis]];
     }
 
-    // Position in words (a350f-places.js), refreshed every 5 s at most
+    // Position in words (places.js), refreshed every 5 s at most
     var where = { at: 0, text: '' };
     function whereNow() {
       if (!live || !window.A350F_WHERE) return '';

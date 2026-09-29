@@ -1,5 +1,5 @@
 /* Module "a350f", server side: the relay the A350F overlay reads its ADS-B
-   data through (a350f-relay.js, moved into the overlay server).
+   data through (once a standalone script, now part of the overlay server).
 
    The public ADS-B APIs (adsb.lol, adsb.fi) answer a server fine but send no
    CORS headers, so a browser source can't read them from its own page: the

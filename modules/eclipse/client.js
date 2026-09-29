@@ -1,6 +1,5 @@
 /* Module "eclipse", output side: the eclipse overlay's computation and
-   drawing (eclipse-widget-broadcast.html), as variables and two visuals for
-   the bandeau.
+   drawing, as variables and two visuals for the bandeau.
 
    Variables: the headline and timer for the band, the obscuration and the
    Sun's position for the strap, the contact times for the ticker, the

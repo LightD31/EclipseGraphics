@@ -2,14 +2,13 @@
 
 Messages prêts à coller dans une action **Twitch → Send chat message** de Bitfocus
 Companion, déclenchée par un *trigger* périodique (toutes les 10–15 min pendant le
-direct). Tout le contenu variable vient des custom variables poussées par
-`eclipse-widget-broadcast.html` (voir le tableau dans le [README](README.md)) : le
-texte se met donc à jour tout seul, aucune modification manuelle en direct.
+direct). Tout le contenu variable vient des custom variables que le serveur pousse
+quand le module éclipse est actif (voir le tableau dans le [README du module](README.md)) :
+le texte se met donc à jour tout seul, aucune modification manuelle en direct.
 
-> Le widget doit tourner avec `?companion=HOST[:PORT]`, et les custom variables
-> doivent exister côté Companion (les statiques — `eclipse_pct_max`, `eclipse_t_*` —
-> sont renvoyées toutes les minutes, donc un redémarrage de Companion se rattrape
-> tout seul).
+> Companion doit être renseigné dans l'onglet **Réglages** de la régie, et les custom
+> variables doivent exister côté Companion (tout est renvoyé toutes les minutes, donc un
+> redémarrage de Companion se rattrape tout seul).
 
 ## Un message par phase
 

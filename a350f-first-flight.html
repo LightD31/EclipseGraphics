@@ -87,6 +87,7 @@
   #bar.off .seg       { animation: kTextOut 0.2s ease-in 0s both; }
   #bar.off #clock     { animation: kFadeDown 0.2s ease-in 0s both; }
   #bar.off #telemetry { animation: kFadeDown 0.25s ease-in 0s both; }
+  #bar.off #recap     { animation: kFadeDown 0.25s ease-in 0s both; }
   #bar.off #cdwrap    { animation: kFadeDown 0.25s ease-in 0s both; }
   #bar.off #strap     { animation: kDrop 0.3s ease-in 0.05s both; }
   #bar.off #status    { animation: kTextOut 0.3s ease-in 0.08s both; }
@@ -413,6 +414,33 @@
     font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
+  /* ===== Recap (layout.recap): the after-flight summary =====
+     The fullscreen with the whole route framed and, in place of the live
+     flight data, the flight's numbers and how it compares with the earlier
+     A350 first flights. */
+  #recap { display: none; opacity: 0; }
+  #bar.fs.recap #telemetry, #bar.recap #capwhere, #bar.recap #mapcap .nrc, #bar:not(.recap) #mapcap .rc { display: none; }
+  #bar.fs.recap #recap {
+    display: block; background: rgba(16,23,58,0.95); color: #fff;
+  }
+  #bar.on #recap { animation: kFadeUp 0.45s ease-out 0.6s both; }
+  #recap h3 {
+    padding: 16px 26px 12px; background: var(--navy-2);
+    font-size: 19px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;
+  }
+  #recap .rgrid { display: grid; grid-template-columns: 1fr 1fr; }
+  #recap .rcell { padding: 12px 26px 14px; border-top: 1px solid rgba(255,255,255,0.12); min-width: 0; }
+  #recap .rcell:nth-child(even) { border-left: 1px solid rgba(255,255,255,0.12); }
+  #recap .rk { font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.6); }
+  #recap .rval { font-size: 38px; font-weight: 900; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #recap .rs { font-size: 17px; color: rgba(255,255,255,0.55); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #recap .rcmp { padding: 14px 26px 22px; border-top: 1px solid rgba(255,255,255,0.12); }
+  #recap .rbar { display: grid; grid-template-columns: 210px 1fr 90px; align-items: center; gap: 14px; margin-top: 10px; }
+  #recap .rbar span { font-size: 18px; font-weight: 700; white-space: nowrap; }
+  #recap .rbar i { display: block; height: 18px; background: rgba(255,255,255,0.75); }
+  #recap .rbar.now i { background: var(--red); box-shadow: 0 0 0 2px #fff; }
+  #recap .rbar b { font-size: 22px; font-weight: 900; text-align: right; font-variant-numeric: tabular-nums; }
+
   /* Ticker pinned to the bottom, timeline underneath */
   #bar.fs .rv-ticker { position: absolute; left: 0; right: 0; bottom: 18px; }
   #bar.fs #ticker { height: 76px; padding-left: 44px; font-size: 23px; }
@@ -429,6 +457,7 @@
   #strap       { view-transition-name: vt-strap; }
   #redband     { view-transition-name: vt-red; }
   #telemetry   { view-transition-name: vt-telemetry; }
+  #recap       { view-transition-name: vt-recap; }
   #ticker      { view-transition-name: vt-ticker; }
   #timeline    { view-transition-name: vt-timeline; }
   ::view-transition-group(*) {
@@ -480,7 +509,7 @@
         </div></div>
       </div>
       <div id="mapcap" aria-hidden="true">
-        <b>TRAJECTOIRE EN DIRECT · <span id="capday">–</span></b>
+        <b><span class="nrc">TRAJECTOIRE EN DIRECT</span><span class="rc">LE PREMIER VOL DE L'A350F</span> · <span id="capday">–</span></b>
         <div class="leg"><i></i>TRACE ADS-B<i class="lp"></i><span id="capreg">F-WXLD</span></div>
         <div id="capwhere"></div>
       </div>
@@ -514,6 +543,7 @@
         <div id="countdown">--:--:--</div>
       </div>
     </div>
+    <div id="recap" aria-hidden="true"></div>
     <div id="telemetry">
       <div class="tm"><div class="k">Altitude</div><div class="v" id="tv1">–</div><div class="s" id="ts1">–</div></div>
       <div class="tm"><div class="k">Vitesse sol</div><div class="v" id="tv2">–</div><div class="s" id="ts2">–</div></div>
@@ -577,12 +607,14 @@
      are the ones the matching Companion variable reports (a350f_layout, …),
      so a button's command and its feedback compare against the same word.
        air     on | off | toggle         on air, or parked off-screen
-       layout  full | lower | toggle     which layout
+       layout  full | lower | recap | toggle   which layout (recap: the
+                                         fullscreen after-flight summary)
        main    map | profile | toggle    which view owns the canvas (fullscreen)
        card    on | off | toggle         the corner card
        map     track | follow | toggle   frame the whole track, or ride with
                                          the aircraft (fullscreen map)
-     air.on.full / air.on.lower land on air in a named layout in one step.
+     air.on.full / air.on.lower / air.on.recap land on air in a named
+     layout in one step.
      Anything else (schedule, take-off, headline, mode, units, banners) is
      about the flight, not the view: it goes to the flight script below, with
      the event's other fields (a "text", for instance). */
@@ -593,6 +625,14 @@
     if (isOn()) switchView(function () { bar.classList.toggle(name, want); });
     else bar.classList.toggle(name, want);
   }
+  /* The three layouts: lower third, fullscreen, and the fullscreen recap
+     (class recap on top of fs), morphing between them when on air. */
+  function setLayout(which) {
+    var fs = which !== 'lower', recap = which === 'recap';
+    if (isFs() === fs && bar.classList.contains('recap') === recap) return;
+    var change = function () { bar.classList.toggle('fs', fs); bar.classList.toggle('recap', recap); };
+    if (isOn()) switchView(change); else change();
+  }
   function command(cmd, data) {
     cmd = String(cmd || '');
     switch (cmd) {
@@ -601,12 +641,15 @@
       case 'air.toggle': if (isOn()) playOut(); else playIn(); break;
       case 'air.on.full':
       case 'air.on.lower':
-        if (isOn()) setState('fs', cmd === 'air.on.full');
-        else { bar.classList.toggle('fs', cmd === 'air.on.full'); playIn(); }
+      case 'air.on.recap':
+        var lay = cmd.slice(7);
+        if (isOn()) setLayout(lay);
+        else { bar.classList.toggle('fs', lay !== 'lower'); bar.classList.toggle('recap', lay === 'recap'); playIn(); }
         break;
-      case 'layout.full':   setState('fs', true); break;
-      case 'layout.lower':  setState('fs', false); break;
-      case 'layout.toggle': setState('fs', !isFs()); break;
+      case 'layout.full':   setLayout('full'); break;
+      case 'layout.lower':  setLayout('lower'); break;
+      case 'layout.recap':  setLayout('recap'); break;
+      case 'layout.toggle': setLayout(isFs() ? 'lower' : 'full'); break;
       case 'main.map':      setState('swap', false); break;
       case 'main.profile':  setState('swap', true); break;
       case 'main.toggle':   setState('swap', !bar.classList.contains('swap')); break;
@@ -676,7 +719,7 @@
   };
   function pushViewState() {
     a350fFeedback('air', isOn() ? 'on' : 'off');
-    a350fFeedback('layout', isFs() ? 'full' : 'lower');
+    a350fFeedback('layout', !isFs() ? 'lower' : bar.classList.contains('recap') ? 'recap' : 'full');
     a350fFeedback('main', bar.classList.contains('swap') ? 'profile' : 'map');
     a350fFeedback('card', bar.classList.contains('nocard') ? 'off' : 'on');
     a350fFeedback('map', bar.classList.contains('follow') ? 'follow' : 'track');
@@ -1529,6 +1572,8 @@
     });
     var r = Date.now();
     if (flashUntil && r >= flashUntil) { flashEl.className = 'hide'; flashUntil = 0; flashNext = r + 700; }
+    // a flight event that waited its turn past being news is dropped
+    while (flashQ.length && flashQ[0].type !== 'custom' && t - flashQ[0].at >= ANN_WINDOW) flashQ.shift();
     if (!flashUntil && flashQ.length && r >= flashNext) {
       var ev = flashQ.shift(), c = eventCard(ev);
       $('ftag').textContent = c.tag;
@@ -1669,9 +1714,54 @@
 
   }
 
+  // ===== Recap panel (layout.recap) =====
+  var RECAP_AUTO = params.get('recap') === 'auto', recapAutoDone = false;
+  var FIRST_FLIGHTS = [['A350-900', '14/06/2013', 245], ['A350-1000', '24/11/2016', 258]]; // minutes
+  function evOf(type) {
+    for (var i = st.events.length - 1; i >= 0; i--) if (st.events[i].type === type) return st.events[i];
+    return null;
+  }
+  function drawRecap(t) {
+    var to = takeoffTime(), dec = evOf('decollage'), att = evOf('atterrissage');
+    var end = st.landing || (live && !live.gnd ? t : null);
+    var mins = to && end ? Math.round((end - to) / 60000) : null;
+    function cell(k, v, sub) {
+      return '<div class="rcell"><div class="rk">' + esc(k) + '</div><div class="rval">' + esc(v) + '</div><div class="rs">' +
+             esc(sub || '') + '</div></div>';
+    }
+    var h = '<h3>Bilan du premier vol · ' + esc(dayFmt.format(new Date(to || schedTime()))) + '</h3><div class="rgrid">' +
+      cell('Décollage', to ? fmtTS(to) : '–', dec && dec.v && dec.v.rwy ? 'piste ' + dec.v.rwy : 'Toulouse-Blagnac') +
+      cell('Atterrissage', st.landing ? fmtTS(st.landing) : live && !live.gnd ? 'en vol' : '–',
+           att && att.v && att.v.rwy ? 'piste ' + att.v.rwy : '') +
+      cell('Durée', mins != null ? fmtCoarse(mins * 60000) : '–', st.landing ? '' : mins != null ? 'vol en cours' : '') +
+      cell('Distance', st.dist ? nf.format(st.dist) + ' km' : '–', 'parcourus') +
+      cell('Altitude max', st.altMax ? uTxt('alt', st.altMax) : '–', st.altMax ? U('alt', st.altMax).s : '') +
+      cell('Vitesse max', st.gsMax ? uTxt('spd', st.gsMax) : '–',
+           (st.gsMax ? U('spd', st.gsMax).s : '') + (st.machMax ? ' · Mach ' + st.machMax.toFixed(2).replace('.', ',') : '')) +
+      '</div><div class="rcmp"><div class="rk">Premiers vols de la famille A350</div>';
+    var rows = FIRST_FLIGHTS.map(function (r) { return [r[0] + ' · ' + r[1].slice(-4), r[2], false]; });
+    rows.push(['A350F · ' + (to ? new Date(to).getFullYear() : '2026'), mins, true]);
+    var scale = Math.max.apply(null, rows.map(function (r) { return r[1] || 0; })) * 1.05 || 1;
+    rows.forEach(function (r) {
+      h += '<div class="rbar' + (r[2] ? ' now' : '') + '"><span>' + esc(r[0]) + '</span><i style="width:' +
+           ((r[1] || 0) / scale * 100).toFixed(1) + '%"></i><b>' + (r[1] != null ? esc(fmtCoarse(r[1] * 60000)) : '–') + '</b></div>';
+    });
+    h += '</div>';
+    var node = $('recap');
+    if (node._html !== h) { node._html = h; node.innerHTML = h; }
+  }
+
   function updateText() {
     var t = now(), T0 = schedTime(); // the operator may have moved it
     announce(t);
+    if (bar.classList.contains('recap')) drawRecap(t);
+    // ?recap=auto: three minutes after the landing, a fullscreen already on
+    // air moves on to the recap by itself (never from the lower third)
+    if (RECAP_AUTO && !recapAutoDone && st.landing && live && live.gnd && t - st.landing > 180000 &&
+        bar.classList.contains('fs') && bar.classList.contains('on')) {
+      recapAutoDone = true;
+      if (window.a350fCommand) window.a350fCommand('layout.recap');
+    }
     var ph = phaseOf(t);
     lastPhase = ph;
     var to = takeoffTime();
@@ -1726,8 +1816,8 @@
       var flown = to ? fmtCoarse(st.landing - to) : '–';
       sets = [[['Décollage', to ? fmtTS(to) : '–', ''], ['Atterrissage', fmtTS(st.landing), to ? flown + ' de vol' : ''],
                ['Altitude max', uTxt('alt', st.altMax), U('alt', st.altMax).s], ['Distance', nf.format(st.dist) + ' km', 'parcourus']],
-              [['Premier vol A350-900', '4 h 05', '14 juin 2013'], ['Premier vol A350-1000', '4 h 18', '24 nov. 2016'],
-               ['Premier vol A350F', flown, 'aujourd\'hui'], ['Vitesse max', uTxt('spd', st.gsMax), U('spd', st.gsMax).s]]];
+              [['1er vol A350-900', '4 h 05', '2013'], ['1er vol A350-1000', '4 h 18', '2016'],
+               ['1er vol A350F', flown, 'aujourd\'hui'], ['Vitesse max', uTxt('spd', st.gsMax), '']]];
     } else {
       sets = [[['Décollage', to ? fmtT(to) : '–', ''], ['Altitude max', uTxt('alt', st.altMax), U('alt', st.altMax).s],
                ['Vitesse max', uTxt('spd', st.gsMax), U('spd', st.gsMax).s], ['Distance', nf.format(st.dist) + ' km', 'parcourus']]];
@@ -1955,7 +2045,7 @@
   // the corner card always frames the track.
   function camTarget(w, h, pl) {
     var fs = bar.classList.contains('fs'), swap = bar.classList.contains('swap');
-    var follow = !fs || (!swap && bar.classList.contains('follow'));
+    var follow = !fs || (!swap && bar.classList.contains('follow') && !bar.classList.contains('recap'));
     var rects = freeRects(w, h), best = null;
     var home = merc(HOME.lat, HOME.lon);
     rects.forEach(function (r) {

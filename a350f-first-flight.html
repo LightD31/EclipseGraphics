@@ -1448,6 +1448,42 @@
   pollWx();
   setInterval(pollWx, 300000);
 
+  // ===== Operator page (a350f-status.html, through the relay) =====
+  // Every 2 s the page tells the relay what it is showing; the answer
+  // carries any command queued since (the status page's route when OBS's
+  // websocket isn't available). The first call only learns where the queue
+  // is, so nothing old is replayed.
+  var OVERLAY_ID = Math.random().toString(36).slice(2, 10), cmdSince = null;
+  function reportState() {
+    var base = relayBase();
+    if (!base) return;
+    var c = bar.classList, t = now(), last = st.events.slice(-6);
+    var state = {
+      demo: DEMO, reg: REG, air: c.contains('on') ? 'on' : 'off',
+      layout: !c.contains('fs') ? 'lower' : c.contains('recap') ? 'recap' : 'full',
+      main: c.contains('swap') ? 'profile' : 'map', card: c.contains('nocard') ? 'off' : 'on',
+      map: c.contains('follow') ? 'follow' : 'track', units: metric() ? 'metric' : 'aviation', mode: ctl.mode,
+      headline: el.status.textContent, custom: !!ctl.headline, label: el.cdlabel.textContent, timer: el.countdown.textContent,
+      phase: lastPhase, alert: alertCode, t0: fmtTS(schedTime()), clock: fmtT(t),
+      takeoff: takeoffTime() ? fmtT(takeoffTime()) : '', landing: st.landing ? fmtT(st.landing) : '',
+      signal: DEMO ? 'demo' : live && Date.now() - live.seenAt < 30000 ? 'live' : live ? 'stale' : 'none',
+      seen: live ? Math.round((Date.now() - live.seenAt) / 1000) : null, source: sourceName,
+      alt: live ? (live.gnd ? 'au sol' : uTxt('alt', live.alt || 0)) : '', speed: live ? uTxt('spd', live.gs) : '',
+      where: live ? whereNow() : '', points: st.samples.length,
+      events: last.map(function (e) { var k = eventCard(e); return { t: fmtTS(e.t), text: k.title + (k.sub ? ' — ' + k.sub : '') }; })
+    };
+    fetch(base.replace(/adsb$/, 'state'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: OVERLAY_ID, since: cmdSince, state: state })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (cmdSince != null) (j.commands || []).forEach(function (q) {
+        if (window.a350fCommand) window.a350fCommand(q.cmd, { text: q.text });
+      });
+      cmdSince = j.seq;
+    }).catch(function () { /* no relay: Companion / OBS only */ });
+  }
+  setInterval(reportState, 2000);
+
   // ===== Phase =====
   function distHome(p) { return distKm(p.lat, p.lon, HOME.lat, HOME.lon); }
   function phaseOf(t) {

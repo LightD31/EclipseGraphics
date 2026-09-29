@@ -1,0 +1,30 @@
+/* ===== Message du chat (module "twitch") =====
+   bulle: [DANS LE CHAT · pseudo · modo]   bande: [pseudo on the accent]
+          [ the message, on the light box ]       [ the message ]        */
+.gfx-chat { --ch-box: var(--c-surface); --ch-text: var(--c-onSurface); }
+.ch-pos { position: absolute; display: flex; flex-direction: column; align-items: flex-start; max-width: var(--ch-max, 900px); }
+.ch-pos[data-anchor$=r] { align-items: flex-end; }
+.ch-pos[data-anchor$=c] { align-items: center; }
+.ch-head {
+  display: flex; align-items: baseline; gap: calc(12 * var(--u)); padding: calc(10 * var(--u)) calc(18 * var(--u));
+  background: var(--c-base); color: var(--c-onBase); border-radius: var(--radius) var(--radius) 0 0; white-space: nowrap; max-width: 100%;
+}
+.ch-kicker { font-size: calc(15 * var(--u)); font-weight: var(--w-strong); letter-spacing: 1px; text-transform: uppercase; color: var(--c-onBase-62); }
+.ch-user { font-size: calc(26 * var(--u)); line-height: 1; overflow: hidden; text-overflow: ellipsis; }
+.ch-badge {
+  font-size: calc(13 * var(--u)); font-weight: var(--w-strong); text-transform: uppercase; letter-spacing: 1px;
+  padding: calc(3 * var(--u)) calc(8 * var(--u)); background: var(--c-accent); color: var(--c-onAccent); border-radius: calc(3 * var(--u));
+}
+.ch-box {
+  padding: calc(14 * var(--u)) calc(20 * var(--u)) calc(16 * var(--u)); background: var(--ch-box); color: var(--ch-text);
+  border-radius: 0 var(--radius) var(--radius) var(--radius); box-shadow: var(--shadow); max-width: 100%;
+}
+.ch-text {
+  font-size: calc(28 * var(--u)); line-height: 1.25; font-weight: var(--w-text); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--ch-lines, 3); overflow: hidden;
+}
+/* the strap form: the name on the accent band */
+.gfx-chat[data-style=bande] .ch-head { background: var(--c-accent); color: var(--c-onAccent); }
+.gfx-chat[data-style=bande] .ch-kicker { color: var(--c-onAccent); opacity: 0.75; }
+.gfx-chat[data-style=bande] .ch-badge { background: var(--c-base); color: var(--c-onBase); }
+.gfx-chat[data-style=bande] .ch-box { background: var(--c-base); color: var(--c-onBase); }

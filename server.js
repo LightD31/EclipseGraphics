@@ -99,16 +99,19 @@ function writeJSON(file, obj, backup) {
 
 // ===== Modules =====
 /* modules/<id>/module.js: the descriptor (UMD, shared with the browser);
-   modules/<id>/server.js: optional, init(ctx) → { routes, status, onShow } */
+   modules/<id>/server.js: optional, init(ctx) → { routes, status, onShow,
+   commands, command, onCommand, stop } (see "Modules' server parts") */
 const MODULES = {};
 const moduleServers = {};
-for (const dir of fs.existsSync(path.join(ROOT, 'modules')) ? fs.readdirSync(path.join(ROOT, 'modules')) : []) {
+const MODTYPES = {};      /* graphic type a module brings → its module id */
+for (const dir of fs.existsSync(path.join(ROOT, 'modules')) ? fs.readdirSync(path.join(ROOT, 'modules')).sort() : []) {
   const file = path.join(ROOT, 'modules', dir, 'module.js');
   if (!fs.existsSync(file)) continue;
   try {
     const m = require(file);
     if (!m || m.id !== dir) throw new Error('its id must be the folder name');
     MODULES[m.id] = m;
+    for (const t of Object.keys(m.graphics || {})) MODTYPES[t] = m.id;
   } catch (e) { log('warn', 'module ' + dir + ': ' + e.message); }
 }
 
@@ -171,6 +174,7 @@ function activate(name) {
   active.name = name; active.config = cfg; active.rev++;
   settings.active = name; saveSettings();
   for (const k of Object.keys(vars)) delete vars[k];
+  broadcast('vars', { reset: true, m: null, v: {} });
   liveOf(name);
   moduleHooks();
   for (const id in moduleServers) if (moduleServers[id].onShow) moduleServers[id].onShow(cfg);
@@ -310,6 +314,8 @@ function firstOfType(type) { const g = active.config.graphics.find(x => x.type =
 function moduleGraphic(mid) {
   const s = moduleSettings(mid);
   if (s.graphic && graphicById(s.graphic)) return s.graphic;
+  const own = active.config.graphics.find(x => MODTYPES[x.type] === mid);
+  if (own) return own.id;
   const g = active.config.graphics.find(x => x.type === 'bandeau' &&
     [U.getPath(x.fields, 'panel.source'), U.getPath(x.fields, 'card.source')].some(src => String(src || '').startsWith('module:' + mid + '.')));
   return g ? g.id : firstOfType('bandeau');
@@ -451,12 +457,18 @@ function entryCommand(g, L, v, take) {
   else if (L.air) setAir(g, true); /* a new name on air runs its own time */
   return ok();
 }
+/* A module's command: <name>.<value> handled by commands[name] (its
+   server part's first, then module.js's; undefined or true = done, false =
+   refused), else by a catch-all command(name, value, ctx) for names that
+   aren't known in advance (a timer's id…: null = not the module's, and the
+   command goes on to the module's graphic) */
 function moduleCommand(mid, cmd, text) {
-  const M = MODULES[mid];
+  const M = MODULES[mid], srv = moduleServers[mid] || {};
   const dot = cmd.indexOf('.');
   const ns = dot < 0 ? cmd : cmd.slice(0, dot), v = dot < 0 ? '' : cmd.slice(dot + 1);
-  const fn = M.commands && M.commands[ns];
-  if (!fn) return null;
+  const fn = (srv.commands && srv.commands[ns]) || (M.commands && M.commands[ns]);
+  const any = srv.command || M.command;
+  if (!fn && !any) return null;
   const live = liveOf(active.name), st = live.modules[mid];
   const set = moduleSettings(mid), tz = active.config.timezone;
   const ctx = {
@@ -465,8 +477,10 @@ function moduleCommand(mid, cmd, text) {
     when: (s) => U.parseWhen(s, tz, set.date || U.dayOf(moduleNow(mid), tz)),
   };
   let r;
-  try { r = fn(v, ctx); } catch (e) { return fail(e.message); }
+  try { r = fn ? fn(v, ctx) : any(ns, v, ctx); } catch (e) { return fail(e.message); }
+  if (!fn && r == null) return null;
   if (r === false) return fail('valeur refusée : ' + cmd);
+  if (srv.onCommand) try { srv.onCommand(ns, v); } catch (e) { log('warn', mid + ': ' + e.message); }
   liveChanged();
   broadcast('module', { m: mid, cmd, text }, c => c.role === 'output');
   return ok();
@@ -540,8 +554,15 @@ setInterval(() => {
    graphics, nor what a module marks as screen-only (its ticking clock) */
 function forCompanion(m, k, v) {
   if (k.charAt(0) === '_' || typeof v !== 'string') return false;
-  const d = (MODULES[m] && MODULES[m].vars || []).find(x => x.name === k);
+  const d = moduleVars(m).find(x => x.name === k);
   return !(d && d.screen);
+}
+/* A module's declared variables: a list, or a function of its settings */
+function moduleVars(m) {
+  const M = MODULES[m];
+  if (!M || !M.vars) return [];
+  if (typeof M.vars !== 'function') return M.vars;
+  try { return (active.config && enabledModules().includes(m) ? M.vars(moduleSettings(m), U) : []) || []; } catch (e) { return []; }
 }
 function setVars(m, v) {
   const cur = vars[m] || (vars[m] = {});
@@ -701,8 +722,11 @@ const TYPES = {
   '.txt': 'text/plain; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff',
   '.ttf': 'font/ttf', '.otf': 'font/otf', '.webm': 'video/webm', '.mp4': 'video/mp4',
+  '.csv': 'text/csv', '.xml': 'application/xml', '.rss': 'application/rss+xml',
 };
-const MEDIA_EXT = /\.(png|jpe?g|gif|webp|svg|woff2?|ttf|otf|webm|mp4)$/i;
+/* the media library: images, videos, fonts, and data files a module can
+   read (the flux module's CSV, JSON, RSS or text sources) */
+const MEDIA_EXT = /\.(png|jpe?g|gif|webp|svg|woff2?|ttf|otf|webm|mp4|csv|json|xml|rss|txt)$/i;
 const JSON_TYPE = { 'Content-Type': 'application/json; charset=utf-8' };
 function send(res, status, headers, body) {
   res.writeHead(status, Object.assign({ 'Cache-Control': 'no-store' }, headers));
@@ -779,7 +803,7 @@ function mediaList() {
     const st = fs.statSync(path.join(MEDIA_DIR, f));
     const ext = path.extname(f).toLowerCase();
     return { name: f, url: 'media/' + encodeURIComponent(f), size: st.size, mtime: st.mtimeMs,
-             kind: /woff2?|ttf|otf/.test(ext) ? 'font' : /webm|mp4/.test(ext) ? 'video' : 'image' };
+             kind: /woff2?|ttf|otf/.test(ext) ? 'font' : /webm|mp4/.test(ext) ? 'video' : /csv|json|xml|rss|txt/.test(ext) ? 'data' : 'image' };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 function statusInfo() {
@@ -792,7 +816,7 @@ function statusInfo() {
 }
 function stateFor(role) {
   const s = { show: { name: active.name, config: active.config, rev: active.rev }, live: liveOf(active.name), vars, media: mediaList(),
-              serverTime: Date.now(), modules: Object.keys(MODULES) };
+              serverTime: Date.now(), modules: Object.keys(MODULES), modTypes: MODTYPES };
   if (role === 'panel') Object.assign(s, { shows: listShows(), settings: publicSettings(), status: statusInfo() });
   return s;
 }
@@ -926,7 +950,6 @@ async function api(req, res, url) {
         broadcast('show', { name: active.name, config: active.config, rev: active.rev, switched: true });
         liveChanged();
         assignLeaders();
-        broadcast('vars', { reset: true, m: null, v: {} });
         break;
       }
       default: return sendJSON(res, 400, { ok: false, error: 'action inconnue' });
@@ -986,16 +1009,46 @@ async function api(req, res, url) {
 }
 
 // ===== Modules' server parts =====
+/* modules/<id>/server.js: exports.init(ctx) → { routes: [[method, regex,
+   handler(req, res, url, match)]], status() (for the panel), onShow(config)
+   (a show opened or edited), commands / command (as in module.js, with the
+   server's own data at hand), onCommand(name, value) (after any of the
+   module's commands), stop() }. ctx: */
+function moduleContext(id) {
+  const on = () => !!active.config && enabledModules().includes(id);
+  return {
+    id, log, arg, root: ROOT, dataDir: DATA_DIR, mediaDir: MEDIA_DIR, U,
+    activeShow: () => active.config,
+    enabled: on,
+    /* the module's settings in the active show (defaults filled), null when it's off */
+    settings: () => (on() ? moduleSettings(id) : null),
+    /* its live state (kept per show, shared with the pages); changed() after editing it */
+    state: () => (on() ? liveOf(active.name).modules[id] : null),
+    changed: (quiet) => { if (on()) liveChanged({ quiet: !!quiet }); },
+    /* variables for the graphics ({{<id>.<name>}}), the panel and Companion (<id>_<name>) */
+    setVars: (v) => { if (on()) setVars(id, v); },
+    vars: () => vars[id] || {},
+    /* a banner in the module's flash (settings.flash, else the first one) */
+    flash: (item, front) => {
+      const g = on() && graphicById(moduleFlash(id) || '');
+      if (!g || g.type !== 'flash') return false;
+      const added = enqueueFlash(g, Object.assign({}, item, { module: id }), !!front);
+      if (added) liveChanged({ quiet: true });
+      return added;
+    },
+    command: (target, cmd, text) => runCommand(target, cmd, text, id),
+    /* an event for the panels (the module's panel.js gets it: onEvent(name, data)) */
+    emit: (event, data) => broadcast('mod', { m: id, event, data }, c => c.role === 'panel'),
+    now: () => moduleNow(id),
+    tz: () => (active.config ? active.config.timezone : 'Europe/Paris'),
+  };
+}
 const moduleRoutes = [];
 for (const id in MODULES) {
   const file = path.join(ROOT, 'modules', id, 'server.js');
   if (!fs.existsSync(file)) continue;
   try {
-    const part = require(file).init({
-      log, arg, root: ROOT, dataDir: DATA_DIR, U,
-      activeShow: () => active.config,
-      settings: () => (active.config && enabledModules().includes(id) ? moduleSettings(id) : null),
-    });
+    const part = require(file).init(moduleContext(id));
     moduleServers[id] = part || {};
     for (const r of (part && part.routes) || []) moduleRoutes.push(r);
   } catch (e) { log('warn', 'module ' + id + ' (server): ' + e.message); }
@@ -1030,7 +1083,7 @@ const server = http.createServer((req, res) => {
 });
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    console.error('Port ' + PORT + ' déjà utilisé (a350f-relay.js tourne-t-il encore ?) — essayez --port ' + (PORT + 1));
+    console.error('Port ' + PORT + ' déjà utilisé (le serveur tourne-t-il déjà ?) — essayez --port ' + (PORT + 1));
     process.exit(1);
   }
   throw e;

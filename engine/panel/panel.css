@@ -81,6 +81,19 @@ h2 { font-family: var(--cond); font-size: 14px; font-weight: 800; letter-spacing
 .rd-state { font-size: 12px; color: var(--dim); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-state b { color: #fff; }
 .rd-empty { color: var(--dim); padding: 14px 4px; }
+/* a module's own live controls (stopwatches, score, chat…) */
+.rd-card.rd-mod { cursor: default; border-left-color: var(--sel); background: #0f1740; }
+.rd-card.rd-mod:hover { background: #0f1740; }
+.rd-modbody { margin-top: 4px; }
+/* modules' live controls (rundown card, Modules tab) */
+.modctl .big { font-family: var(--cond); font-weight: 800; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.modctl .sub { font-size: 12px; color: var(--dim); }
+.modctl .line { display: flex; align-items: center; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.modctl .line .grow { flex: 1 1 auto; min-width: 0; }
+.modctl .sep { border-top: 1px solid var(--line); margin-top: 9px; }
+.modctl .run { color: var(--ok); }
+.modctl .end { color: var(--bad); }
+.modctl input[type=text].short { width: 84px; flex: 0 0 84px; }
 
 /* ===== Preview =====
    Stays in view while the editor scrolls under it, at most ~42 % of the

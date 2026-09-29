@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "title": "Émission en direct",
+  "timezone": "Europe/Paris",
+  "theme": { "preset": "info" },
+  "motion": { "preset": "direct" },
+  "modules": {
+    "programme": {
+      "enabled": true,
+      "settings": {
+        "items": [
+          { "time": "20:00", "title": "Ouverture", "sub": "" },
+          { "time": "20:10", "title": "Le journal", "sub": "l'essentiel de la journée" },
+          { "time": "20:30", "title": "Le grand entretien", "sub": "avec notre invitée" },
+          { "time": "21:00", "title": "Le débat", "sub": "quatre invités en plateau" },
+          { "time": "21:45", "title": "Vos questions", "sub": "posez-les dans le chat avec !question" },
+          { "time": "22:00", "title": "Fin du direct", "sub": "" }
+        ],
+        "upcoming": 3, "nextLabel": "À suivre"
+      }
+    },
+    "chrono": {
+      "enabled": true,
+      "settings": {
+        "timers": [
+          { "label": "Temps de parole", "id": "parole", "mode": "down", "duration": "02:00", "format": "auto", "end": "over", "endText": "", "flash": "" }
+        ]
+      }
+    },
+    "meteo": { "enabled": true, "settings": { "place": "Toulouse", "lat": 43.6043, "lon": 1.4437 } },
+    "flux": {
+      "enabled": true,
+      "settings": {
+        "sources": [
+          { "id": "breves", "kind": "csv", "url": "/media/exemple-breves.csv", "every": 60, "max": 10, "item": "{{Rubrique}} · {{Titre}}", "list": "", "fields": [] }
+        ]
+      }
+    },
+    "twitch": { "enabled": true, "settings": { "channel": "", "prefix": "!question" } }
+  },
+  "variables": [],
+  "graphics": [
+    {
+      "id": "bandeau", "type": "bandeau", "name": "Bandeau",
+      "fields": {
+        "band": {
+          "headline": "{{programme.titre|default:Le grand direct}}", "tag": "En direct",
+          "timer": { "mode": "text", "label": "Temps de parole", "value": "{{chrono.parole}}" }
+        },
+        "strap": {
+          "enabled": true, "main": "{{programme.sous}}", "second": "", "accent": "{{meteo.lieu}}",
+          "info": "{{programme.suivant_heure}} {{programme.suivant}}", "badge": true, "badgeText": "En direct", "badgeIdle": ""
+        },
+        "ticker": { "enabled": true, "source": "var", "var": "programme.ticker", "rotate": 12, "clock": true, "clockText": "{{clock.hm}}" },
+        "timeline": { "enabled": false },
+        "panel": { "source": "module:meteo.now" },
+        "card": { "source": "none" },
+        "layout": { "width": "full", "mx": 0, "my": 0 }
+      },
+      "motion": {}
+    },
+    { "id": "annonces", "type": "flash", "name": "Annonces", "fields": { "anchor": "bandeau:bandeau", "duration": 8, "defaultTag": "Info", "presets": [
+        { "tag": "Chat", "title": "Posez vos questions avec !question", "sub": "", "dur": "" } ] }, "motion": {} },
+    { "id": "breves", "type": "ticker", "name": "Brèves", "fields": { "mode": "crawl", "items": [], "itemsVar": "flux.breves_liste", "tag": "Brèves", "edge": "top", "clock": false }, "motion": {} },
+    { "id": "meteo_coin", "type": "meteo", "name": "Météo", "fields": { "label": "{{meteo.lieu}}", "days": "0", "pos": { "anchor": "tr", "x": 56, "y": 96 } }, "motion": {} },
+    { "id": "chat", "type": "chat", "name": "Message du chat", "fields": { "style": "bulle", "kicker": "Dans le chat", "pos": { "anchor": "bl", "x": 96, "y": 330 } }, "motion": {} },
+    { "id": "invites", "type": "synthe", "name": "Invités", "fields": {
+        "entries": [
+          { "name": "Camille Martin", "role": "Présentation", "extra": "", "image": "" },
+          { "name": "Alex Bernard", "role": "Économiste", "extra": "", "image": "" },
+          { "name": "Sam Durand", "role": "Journaliste", "extra": "", "image": "" }
+        ],
+        "autoOut": 8, "style": "empile", "pos": { "anchor": "bl", "x": 96, "y": 330 } }, "motion": {} }
+  ]
+}

@@ -1,0 +1,88 @@
+/* Module "meteo": the icons, the bandeau's visual (data-place: panel = the
+   lower third's square, card = the fullscreen's corner card, canvas = the
+   whole screen) and the "Météo" corner graphic. */
+
+/* ===== Icons ===== */
+.mi { display: block; width: 100%; height: 100%; overflow: visible; }
+.mi-sun circle { fill: #FFC83D; }
+.mi-rays line { stroke: #FFC83D; stroke-width: 3.6; stroke-linecap: round; }
+.mi-moon { fill: #E4EAF4; }
+.mi-cloud { fill: #F2F5FA; }
+.mi-cloud.dark { fill: #A3AEC0; }
+.mi-fog line { stroke: #D6DDE8; stroke-width: 4.2; stroke-linecap: round; }
+.mi-drop line { stroke: #5AA9FF; stroke-width: 3.6; stroke-linecap: round; }
+.mi-dot circle { fill: #5AA9FF; }
+.mi-snow circle { fill: #FFFFFF; stroke: #B9C6DA; stroke-width: 0.8; }
+.mi-bolt { fill: #FFC83D; }
+.mi-cloud, .mi-sun circle, .mi-moon { filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.25)); }
+
+/* ===== The bandeau's visual ===== */
+.mt-vis { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--c-base); color: var(--c-onBase); overflow: hidden; }
+.mt-head, .mt-det, .mt-days, .mt-credit { display: none; }
+.mt-empty { margin: auto; font-size: 18px; color: var(--c-onBase-55); }
+.mt-main { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.mt-icon { width: 58%; aspect-ratio: 1; }
+.mt-temp { font-size: 44px; line-height: 1; }
+.mt-sky { display: none; }
+
+/* in the corner card: now on one line, then three days */
+.mt-vis[data-place=card] { position: relative; inset: auto; height: calc(var(--card-w, 24vw) * 0.52); padding: 14px 18px; gap: 10px; }
+.mt-vis[data-place=card] .mt-main { flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: 16px; }
+.mt-vis[data-place=card] .mt-icon { width: 78px; }
+.mt-vis[data-place=card] .mt-temp { font-size: 52px; }
+.mt-vis[data-place=card] .mt-sky { display: block; font-size: 18px; color: var(--c-onBase-72); margin-top: 4px; }
+.mt-vis[data-place=card] .mt-days { display: flex; gap: 10px; margin-top: auto; }
+
+/* on the canvas: the whole weather, clear of the right-hand column and the bottom band —
+   and of the band under the caption where the bandeau's flashes come (top: 196px) */
+.mt-vis[data-place=canvas] {
+  padding: 64px calc(var(--col-w, 46vw) + 70px) calc(var(--bottom-h, 94px) + 50px) 90px;
+  background: radial-gradient(ellipse at 18% 38%, var(--c-base2), var(--c-base) 70%);
+}
+.mt-vis[data-place=canvas] .mt-head { display: flex; align-items: baseline; gap: 22px; }
+.mt-vis[data-place=canvas] .mt-place { font-size: 40px; }
+.mt-vis[data-place=canvas] .mt-upd { font-size: 18px; color: var(--c-onBase-55); }
+.mt-vis[data-place=canvas] .mt-main { flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: 36px; margin-top: 172px; }
+.mt-vis[data-place=canvas] .mt-icon { width: 180px; }
+.mt-vis[data-place=canvas] .mt-temp { font-size: 132px; }
+.mt-vis[data-place=canvas] .mt-sky { display: block; font-size: 34px; color: var(--c-onBase-72); margin-top: 8px; }
+.mt-vis[data-place=canvas] .mt-det { display: flex; gap: 46px; margin-top: 26px; }
+.mt-vis[data-place=canvas] .mt-days { display: flex; gap: 18px; margin-top: auto; }
+.mt-vis[data-place=canvas] .mt-credit { display: block; position: absolute; left: 90px; bottom: calc(var(--bottom-h, 94px) + 14px); font-size: 13px; color: var(--c-onBase-55); }
+.mt-cell { display: flex; flex-direction: column; gap: 4px; }
+.mt-k { font-size: 16px; font-weight: var(--w-strong); letter-spacing: 1px; text-transform: uppercase; color: var(--c-onBase-62); }
+.mt-v { font-size: 34px; }
+.mt-day { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 8px; background: var(--c-onBase-12); border-radius: var(--radius); }
+.mt-dn { font-size: 15px; font-weight: var(--w-strong); text-transform: uppercase; letter-spacing: 1px; }
+.mt-di { width: 44px; height: 44px; }
+.mt-dmm { font-size: 17px; }
+.mt-dpp { font-size: 13px; color: var(--c-onBase-62); }
+.mt-vis[data-place=canvas] .mt-day { padding: 18px 12px; gap: 8px; }
+.mt-vis[data-place=canvas] .mt-dn { font-size: 22px; }
+.mt-vis[data-place=canvas] .mt-di { width: 84px; height: 84px; }
+.mt-vis[data-place=canvas] .mt-dmm { font-size: 30px; }
+.mt-vis[data-place=canvas] .mt-dpp { font-size: 17px; }
+.mt-vis[data-place=card] .mt-dpp { display: none; }
+
+/* ===== "Météo": the corner chip ===== */
+.gfx-meteo { --mw-chip: var(--c-base); }
+.mw-pos { position: absolute; display: flex; flex-direction: column; align-items: flex-end; gap: calc(8 * var(--u)); }
+.mw-pos[data-anchor$=l] { align-items: flex-start; }
+.mw-pos[data-anchor$=c] { align-items: center; }
+.mw-chip {
+  display: flex; align-items: center; gap: calc(14 * var(--u)); height: calc(72 * var(--u)); padding: 0 calc(22 * var(--u)) 0 calc(14 * var(--u));
+  background: var(--mw-chip); background-image: var(--gloss); color: var(--c-onBase); border-radius: var(--radius); box-shadow: var(--shadow); white-space: nowrap;
+}
+.mw-icon { width: calc(54 * var(--u)); height: calc(54 * var(--u)); flex: 0 0 auto; }
+.mw-temp { font-size: calc(40 * var(--u)); line-height: 1; }
+.mw-txt { display: flex; flex-direction: column; gap: calc(3 * var(--u)); padding-left: calc(14 * var(--u)); border-left: 1px solid var(--c-onBase-22); }
+.mw-place { font-size: calc(22 * var(--u)); line-height: 1; }
+.mw-sky { font-size: calc(17 * var(--u)); color: var(--c-onBase-72); line-height: 1.1; }
+.mw-days { display: flex; gap: calc(8 * var(--u)); }
+.mw-day {
+  display: flex; align-items: center; gap: calc(8 * var(--u)); height: calc(46 * var(--u)); padding: 0 calc(12 * var(--u));
+  background: var(--mw-chip); color: var(--c-onBase); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.mw-dn { font-size: calc(16 * var(--u)); }
+.mw-di { width: calc(32 * var(--u)); height: calc(32 * var(--u)); }
+.mw-dmm { font-size: calc(18 * var(--u)); }

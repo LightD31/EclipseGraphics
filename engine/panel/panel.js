@@ -103,7 +103,7 @@
       S.offset = d.serverTime - Date.now();
       S.name = d.show.name; S.show = d.show.config; S.rev = d.show.rev; stable = JSON.stringify(S.show);
       S.live = d.live; S.vars = d.vars || {}; S.media = d.media || []; S.shows = d.shows || [];
-      S.settings = d.settings; S.status = d.status; S.modules = d.modules || [];
+      S.settings = d.settings; S.status = d.status; S.modules = d.modules || []; S.modTypes = d.modTypes || {};
       $('offline').hidden = true;
       T.useUploaded(S.media);
       loadModules().then(renderAll);
@@ -128,6 +128,13 @@
       if (d.reset) S.vars = {}; else S.vars[d.m] = Object.assign(S.vars[d.m] || {}, d.v);
       if (S.tab === 'vars') refreshVarValues();
       if (S.tab === 'modules') refreshModules();
+      refreshRdMods();
+    });
+    es.addEventListener('mod', function (e) {
+      var d = JSON.parse(e.data);
+      rdMods.concat(modViews).forEach(function (v) {
+        if (v.id === d.m && v.ctl.onEvent) try { v.ctl.onEvent(d.event, d.data); } catch (err) { console.error(d.m, err); }
+      });
     });
     es.addEventListener('shows', function (e) { S.shows = JSON.parse(e.data).shows; renderHeader(); if (S.tab === 'shows') renderTab(); });
     es.addEventListener('media', function (e) { S.media = JSON.parse(e.data).media; T.useUploaded(S.media); if (S.tab === 'settings') renderTab(); });
@@ -161,15 +168,29 @@
       document.head.appendChild(s);
     }));
   }
+  /* Every installed module's descriptor, the graphic types it brings (so
+     they can be added and edited even before the module is switched on) and
+     its panel part */
   function loadModules() {
     return Promise.all(S.modules.map(function (id) {
       return script('modules/' + id + '/module.js').then(function () {
         var D = mod(id);
-        return D && D.panel ? script('modules/' + id + '/' + D.panel) : null;
+        if (!D) return null;
+        var files = Object.keys(D.graphics || {}).map(function (t) { return D.graphics[t]; });
+        if (D.panel) files.push(D.panel);
+        return files.reduce(function (p, f) { return p.then(function () { return script('modules/' + id + '/' + f); }); }, Promise.resolve());
       });
     }));
   }
   function mod(id) { return window.GFXModules && window.GFXModules[id]; }
+  /* A module's variables: a list, or a function of its settings for the
+     ones named after what the operator created (a timer, a feed…) */
+  function modVars(id) {
+    var D = mod(id);
+    if (!D || !D.vars) return [];
+    if (typeof D.vars !== 'function') return D.vars;
+    try { return D.vars(modSettings(id), U) || []; } catch (e) { return []; }
+  }
   function enabledMods() { return Object.keys(S.show.modules || {}).filter(function (id) { return S.show.modules[id] && S.show.modules[id].enabled && mod(id); }); }
   function modSettings(id) {
     var D = mod(id), m = (S.show.modules || {})[id] || {};
@@ -206,7 +227,7 @@
     }) });
     enabledMods().forEach(function (id) {
       var D = mod(id), items = [], seen = {};
-      (D.vars || []).forEach(function (v) { seen[v.name] = true; items.push([id + '.' + v.name, v.label, show((S.vars[id] || {})[v.name])]); });
+      modVars(id).forEach(function (v) { seen[v.name] = true; items.push([id + '.' + v.name, v.label, show((S.vars[id] || {})[v.name])]); });
       Object.keys(S.vars[id] || {}).forEach(function (k) { if (!seen[k] && k.charAt(0) !== '_') items.push([id + '.' + k, '', show(S.vars[id][k])]); });
       g.push({ title: D.label, items: items });
     });
@@ -321,7 +342,10 @@
   });
 
   // ===== Rundown =====
-  var rd = {};
+  var rd = {}, rdMods = [];
+  function refreshRdMods() {
+    rdMods.forEach(function (m) { if (m.ctl.refresh) try { m.ctl.refresh(); } catch (e) { console.error(m.id, e); } });
+  }
   function renderRundown() {
     var list = $('rdList');
     /* what was being typed in the rundown's fields survives the rebuild */
@@ -349,6 +373,17 @@
       quick(g, card, R);
       card.appendChild(state);
       list.appendChild(card);
+    });
+    /* modules with live controls of their own (a stopwatch's buttons, the
+       chat's messages…): a card each, under the graphics */
+    dropViews(rdMods); rdMods = [];
+    enabledMods().forEach(function (id) {
+      var ext = GFX.panels[id], D = mod(id);
+      if (!ext || !ext.rundown) return;
+      var body = h('div', { class: 'rd-modbody' });
+      list.appendChild(h('div', { class: 'rd-card rd-mod' }, [h('div', { class: 'rd-top' }, [
+        h('span', { class: 'rd-icon', text: D.icon || '◆' }), h('div', { class: 'rd-name', text: D.label }), h('span', { class: 'rd-type', text: 'module' })]), body]));
+      try { rdMods.push({ id: id, ctl: ext.rundown(body, moduleApi(id)) || {} }); } catch (e) { console.error(id, e); }
     });
     list.querySelectorAll('input[data-k]').forEach(function (i) {
       if (kept[i.dataset.k] != null) i.value = kept[i.dataset.k];
@@ -415,6 +450,19 @@
       row3.appendChild(btn(R, 'next', 'Passer', function () { cmd(g.id, 'banner.next'); }));
       row3.appendChild(btn(R, 'clear', 'Vider', function () { cmd(g.id, 'banner.clear'); }));
       card.appendChild(row3);
+    } else if (GFX.types[g.type] && GFX.types[g.type].quick) {
+      /* a module's graphic: its own controls (quick(card, env) → { update(live) → state text }) */
+      var mid = S.modTypes[g.type];
+      try {
+        R.q = GFX.types[g.type].quick(card, {
+          h: h, g: g, fields: function () { return fieldsOf(g); },
+          cmd: function (c, text) { return cmd(g.id, c, text); },
+          moduleCmd: function (c, text) { return cmd(mid, c, text); },
+          state: function () { return (S.live && S.live.modules && S.live.modules[mid]) || {}; },
+          vars: function () { return S.vars[mid] || {}; },
+          btn: function (key, label, fn, title) { return btn(R, key, label, fn, title); }
+        }) || {};
+      } catch (e) { console.error(g.id, e); }
     }
   }
   function viewsOf(g) {
@@ -464,20 +512,32 @@
         if (a) st += ' · collé à ' + a[1];
       } else if (g.type === 'card') st = { titre: 'titre', attente: 'attente', chiffres: 'chiffres clés', message: 'message' }[f.template] || '';
       else if (g.type === 'ticker') st = { crawl: 'défilement continu', rotate: 'un message à la fois', sets: 'séries' }[f.mode] || '';
+      else if (R.q && R.q.update) { try { st = R.q.update(L) || ''; } catch (e) { console.error(g.id, e); } }
       R.state.innerHTML = '';
       R.state.appendChild(h('span', { text: g.id + (st ? ' · ' : '') }));
       R.state.appendChild(h('b', { text: st }));
     });
+    refreshRdMods();
   }
   $('bAdd').addEventListener('click', function () {
-    var groups = [{ title: 'Ajouter un graphique', items: Object.keys(GFX.types).map(function (k) { return [k, GFX.types[k].label, GFX.types[k].desc]; }) }];
+    var groups = [{ title: 'Ajouter un graphique', items: [] }], byMod = {};
+    Object.keys(GFX.types).forEach(function (k) {
+      var mid = S.modTypes[k], it = [k, GFX.types[k].label, GFX.types[k].desc];
+      if (!mid) groups[0].items.push(it);
+      else if (mod(mid)) (byMod[mid] = byMod[mid] || []).push(it);
+    });
+    Object.keys(byMod).forEach(function (mid) { groups.push({ title: 'Module « ' + mod(mid).label + ' »', items: byMod[mid] }); });
     Forms.menu($('bAdd'), groups, addGraphic);
     var m = document.querySelector('.fm-menu');
     if (m) m.querySelectorAll('code').forEach(function (c) { c.textContent = GFX.types[c.textContent.replace(/[{}]/g, '')].icon || '▪'; });
   });
   function addGraphic(type) {
-    var def = GFX.types[type];
+    var def = GFX.types[type], mid = S.modTypes[type];
     var g = { id: uniqueId(type), type: type, name: def.label, fields: {}, motion: {} };
+    if (mid) {
+      var entry = S.show.modules[mid] = S.show.modules[mid] || { enabled: false, settings: {} };
+      if (!entry.enabled) { entry.enabled = true; setTimeout(function () { toast('Module « ' + mod(mid).label + ' » activé'); }, 700); }
+    }
     if (type === 'flash') {
       var b = S.show.graphics.find(function (x) { return x.type === 'bandeau'; });
       g.fields.anchor = b ? 'bandeau:' + b.id : 'free';
@@ -506,8 +566,11 @@
     renderHeader(); renderPills(); renderRundown(); setTab(S.tab);
     previewForce();
   }
+  /* a module's panel view may run timers: destroy() when it goes */
+  function dropViews(list) { list.forEach(function (v) { if (v.ctl && v.ctl.destroy) try { v.ctl.destroy(); } catch (e) { /* going anyway */ } }); }
   function renderTab() {
     var el = $('tab');
+    dropViews(modViews); modViews = [];
     el.innerHTML = '';
     if (!S.show) return;
     ({ edit: renderEdit, theme: renderTheme, motion: renderMotion, vars: renderVars, modules: renderModules,
@@ -888,10 +951,11 @@
         rows.appendChild(h('tr', {}, [h('td', {}, [h('code', { text: '{{' + id + '.' + name + '}}', title: 'copier', style: 'cursor:pointer', onclick: function () { copy('{{' + id + '.' + name + '}}'); } })]),
           h('td', { text: label || '' }), td, h('td', {}, [comp])]));
       };
-      (D.vars || []).forEach(function (v) { seen[v.name] = true; add(v.name, v.label, v.screen); });
+      modVars(id).forEach(function (v) { seen[v.name] = true; add(v.name, v.label, v.screen); });
       Object.keys(S.vars[id] || {}).forEach(function (k) { if (!seen[k] && k.charAt(0) !== '_') add(k, ''); });
       el.appendChild(h('details', { class: 'fm-sec', open: true }, [h('summary', { text: D.label }), h('div', { class: 'fm-sec-body' }, [
-        h('p', { class: 'note', text: 'Valeurs calculées par le module dans une sortie ouverte (source OBS ou aperçu).' }), rows])]));
+        h('p', { class: 'note', text: D.client && D.client.length ? 'Valeurs calculées par le module dans une sortie ouverte (source OBS ou aperçu).' :
+          'Valeurs tenues à jour par le serveur.' }), rows])]));
     });
     refreshVarValues();
   }
@@ -911,7 +975,7 @@
   // ===== Modules =====
   var modViews = [];
   function renderModules(el) {
-    modViews = [];
+    dropViews(modViews); modViews = [];
     el.appendChild(h('p', { class: 'note', text: 'Un module apporte des données en direct (calcul astronomique, position ADS-B…) et des visuels (ciel, carte) aux graphiques. Activez-le, réglez-le, puis choisissez ses visuels et ses variables dans les graphiques.' }));
     if (!S.modules.length) el.appendChild(h('p', { class: 'note', text: 'Aucun module installé (dossier modules/).' }));
     S.modules.forEach(function (id) {
@@ -940,8 +1004,25 @@
         set: function (k, v) { U.setPath(entry.settings, k, v); },
         values: function () { return modSettings(id); }
       }, formEnv(null));
+      var help = typeof D.cmdHelp === 'function' ? D.cmdHelp(modSettings(id)) : D.cmdHelp;
+      if (help && help.length) card.appendChild(moduleCommandsHelp(id, help));
     });
     refreshModules();
+  }
+  /* What Companion sends to a module: cmdHelp = [[command, effect, example
+     for its <…> part]] (or a function of the settings, for commands named
+     after what the operator created: a timer's id…) */
+  function moduleCommandsHelp(id, list) {
+    var base = location.origin + '/api/cmd/' + id + '/';
+    var tb = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Commande' }), h('th', { text: 'Effet' }), h('th', { text: 'Companion (HTTP GET)' })])]);
+    list.forEach(function (c) {
+      var url = base + c[0].replace(/<[^>]*>/g, c[2] || 'Texte');
+      tb.appendChild(h('tr', {}, [h('td', {}, [h('code', { text: c[0] })]), h('td', { text: c[1] }),
+        h('td', {}, [h('button', { class: 'fm-mini', text: 'copier l\'URL', title: url, onclick: function () { copy(url); } })])]));
+    });
+    return h('details', { class: 'fm-sec' }, [h('summary', { text: 'Commandes (Companion, OBS)' }), h('div', { class: 'fm-sec-body' }, [
+      h('p', { class: 'note' }, ['Companion : module « Generic HTTP », requête GET sur ', h('code', { text: base + '<commande>' }),
+        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + id + ':<commande>"}' }), '.']), tb])]);
   }
   function refreshModules() {
     modViews.forEach(function (v) { if (v.ctl.refresh) try { v.ctl.refresh(); } catch (e) { console.error(e); } });
@@ -953,6 +1034,17 @@
       state: function () { return (S.live && S.live.modules && S.live.modules[id]) || {}; },
       vars: function () { return S.vars[id] || {}; },
       settings: function () { return modSettings(id); },
+      /* change the module's settings (saved like any edit): setting(key, value)
+         or setting({ key: value, … }); the Modules tab redraws with them */
+      setting: function (key, value) {
+        var entry = S.show.modules[id] = S.show.modules[id] || { enabled: true, settings: {} };
+        entry.settings = entry.settings || {};
+        var o = typeof key === 'object' ? key : {};
+        if (typeof key !== 'object') o[key] = value;
+        Object.keys(o).forEach(function (k) { U.setPath(entry.settings, k, o[k]); });
+        changed();
+        if (S.tab === 'modules') renderTab();
+      },
       status: function () { return api('GET', 'api/modules/' + id + '/status'); },
       tz: tz, now: now, log: function () { return (S.status && S.status.log) || []; }
     };
@@ -1053,7 +1145,7 @@
     var mt = h('table', { class: 't' }, [h('tr', {}, ['', 'Fichier', 'Type', 'Taille', ''].map(function (x) { return h('th', { text: x }); }))]);
     S.media.forEach(function (m) {
       mt.appendChild(h('tr', {}, [h('td', {}, [m.kind === 'image' ? h('img', { src: m.url, style: 'height:28px;max-width:80px;object-fit:contain', alt: '' }) : null]),
-        h('td', {}, [h('code', { text: m.name })]), h('td', { text: { image: 'image', font: 'police', video: 'vidéo' }[m.kind] }),
+        h('td', {}, [h('code', { text: m.name })]), h('td', { text: { image: 'image', font: 'police', video: 'vidéo', data: 'données' }[m.kind] }),
         h('td', { text: (m.size / 1024).toFixed(0) + ' Kio' }),
         h('td', {}, [h('button', { class: 'fm-mini', text: '✕', onclick: function () {
           if (confirm('Supprimer ' + m.name + ' ?')) api('DELETE', 'api/media/' + encodeURIComponent(m.name)).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
@@ -1061,7 +1153,7 @@
     });
     var mf = h('input', { type: 'file', multiple: true, hidden: true });
     mf.addEventListener('change', function () { [].forEach.call(mf.files, function (f) { upload(f); }); });
-    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé) et polices, dans le dossier media/.' }),
+    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé), polices, et fichiers de données (CSV, JSON, RSS, texte) que le module « Flux de données » peut lire (/media/nom.csv) — dans le dossier media/.' }),
       mt, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: 'Importer des fichiers…', onclick: function () { mf.click(); } }), mf])]));
     setRefs.server = h('div');
     setRefs.log = h('pre', { class: 'log' });

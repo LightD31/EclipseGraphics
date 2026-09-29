@@ -241,18 +241,23 @@ On top of that, taking some liberties with the eclipse overlay:
 
 Position, altitude and speeds come from the aircraft's own ADS-B transponder, through
 the free community aggregators [adsb.lol](https://adsb.lol) (ODbL) and
-[adsb.fi](https://adsb.fi) (fallback) — both publish a free, key-less, ~1 request/s API
-in the standard readsb format. F-WXLD transmits as Mode S address **`39A53B`** (per the
-tar1090 aircraft database); the overlay also looks it up by registration every few polls,
-and follows whatever address that returns, in case the transponder is ever re-coded.
+[adsb.fi](https://adsb.fi) — both publish a free, key-less API in the standard readsb
+format (adsb.fi allows 1 request/s; adsb.lol's limit varies with its load). F-WXLD
+transmits as Mode S address **`39A53B`** (per the tar1090 aircraft database); the
+overlay also looks it up by registration every few polls, and follows whatever address
+that returns, in case the transponder is ever re-coded.
 Paid APIs (FlightAware, Flightradar24) would work too but need keys; OpenSky's API only
 allows browser calls from its own site.
 
 **Run the relay.** Neither API sends CORS headers, so a browser source can't read them
 directly. `a350f-relay.js` serves this folder and forwards the API calls from the same
-origin, sharing one upstream request between every source that asks, and switching to
-adsb.fi when adsb.lol errors or rate-limits. It also **records the flight** (below), so
-start it early — before the engines start, ideally — and leave it running:
+origin. It alternates between the two, so the aircraft gets a fresh position every
+2.5 s while each API is asked only once every 5 s — whatever the number of browser
+sources or how often they poll. When one errors or rate-limits, the relay leaves it
+alone (30 s, doubling up to 5 min while it keeps refusing, or as long as its
+`Retry-After` asks) and carries on with the other, at its own 5 s pace. It also
+**records the flight** (below), so start it early — before the engines start, ideally —
+and leave it running:
 
 ```
 node a350f-relay.js                 # → http://127.0.0.1:8787/a350f-first-flight.html
@@ -262,6 +267,7 @@ node a350f-relay.js --port 9000 --host 0.0.0.0   # reachable from another machin
 | Relay option | Description |
 |---|---|
 | `--port N` / `--host ADDR` | Where to listen (default `127.0.0.1:8787`). |
+| `--every N` | Seconds between two requests to the same API about the aircraft (default `5`, minimum `2`; 15, or 3×N, while it isn't being seen). With both APIs up, a new position every N/2 s. |
 | `--watch HEX[,HEX…]` | Aircraft to record from startup (default `39a53b`, F-WXLD; `none` for none). Any aircraft the page asks about is added. |
 | `--log DIR` | Where the recording goes (default `flight-log/` next to the relay, git-ignored). |
 
@@ -274,11 +280,12 @@ a local file can still use a running relay with `?relay=http://127.0.0.1:8787`.
 Every point the API returns is kept, with all its fields, so the flight can be rebuilt
 end to end after any interruption:
 
-- **The relay records by itself.** It polls the watched aircraft every 2 s (every 10 s
-  while it hasn't been seen for 10 minutes) whether or not a browser source is open, and
-  appends every new position to `flight-log/<hex>-<UTC date>.jsonl` — one JSON object
-  per line, the API's full aircraft object plus `_t` (when the position was measured,
-  epoch ms) and `_src` (which API gave it). The log is reloaded when the relay restarts.
+- **The relay records by itself.** It polls the watched aircraft every 2.5 s, each API
+  in turn every 5 s (`--every`; every 7.5 s while it hasn't been seen for 10 minutes),
+  whether or not a browser source is open, and appends every new position to
+  `flight-log/<hex>-<UTC date>.jsonl` — one JSON object per line, the API's full
+  aircraft object plus `_t` (when the position was measured, epoch ms) and `_src`
+  (which API gave it). The log is reloaded when the relay restarts.
 - **Holes are filled from adsb.lol's own track.** If the relay loses the APIs (network
   down), is stopped for a while, or the aircraft goes out of receiver coverage, it
   fetches adsb.lol's recorded trace of the aircraft (the one its map draws, a point every
@@ -333,11 +340,12 @@ relay otherwise (each overlay picks them up within 2 s).
 |---|---|
 | `?t0=HH:MM` | Scheduled take-off, local time (default `10:30`). |
 | `?date=YYYY-MM-DD` | Flight day (default `2026-09-29`) — for a postponed flight. |
-| `?dur=N` | Planned flight time in minutes (default `240`), for the progress line and the profile's time axis. |
+| `?land=HH:MM` | Planned landing, local time (default `14:05`): the progress line, the profile's time axis and the ticker. |
+| `?dur=N` | Instead of `?land`: a planned flight time in minutes after take-off. |
 | `?takeoff=HH:MM[:SS]` | Actual take-off time, when the page missed it. |
 | `?reg=` / `?hex=` / `?callsign=` | Aircraft to track (default `F-WXLD` / `39a53b`; callsign optional). |
 | `?msn=N` | MSN shown on screen (default `700`). |
-| `?poll=N` | Seconds between API polls (default `2`, minimum `1`). |
+| `?poll=N` | Seconds between the page's polls of the relay (default `2`, minimum `1`). The relay answers with what it last fetched, so this doesn't change how often the API is asked (that's the relay's `--every`). Without a relay, the page never asks the APIs more often than every 5 s. |
 | `?relay=URL` | Relay to use when the page isn't served by it. |
 | `?reset` | Forget the page's stored track and times for this aircraft and day (the relay's recording, if any, is fetched again). |
 | `?demo` | Play a synthetic first flight instead of live data (taxi, take-off from 32L, a loop over the Atlantic and along the Pyrenees, landing back). |
@@ -373,6 +381,7 @@ with `{"a350f": "<command>"}`, or `window.a350fCommand('<command>')`.
 | `card.on` / `card.off` / `card.toggle` | Corner card (whichever view is in it). |
 | `map.track` / `map.follow` / `map.toggle` | Fullscreen map framing: the whole track (default), or riding with the aircraft. |
 | `t0.HH:MM` · `t0.+N` / `t0.-N` · `t0.reset` | Reschedule the take-off (countdown, ticker and profile follow), shift it by N minutes, or go back to `?t0`. |
+| `land.HH:MM` · `land.+N` / `land.-N` · `land.reset` | Move the planned landing (progress line, profile, ticker), shift it by N minutes, or go back to `?land`. |
 | `takeoff.now` · `takeoff.HH:MM[:SS]` · `takeoff.auto` | Set the actual take-off time (when the page missed it), or back to what ADS-B showed. |
 | `headline.<text>` · `headline.set` + `"text"` · `headline.auto` | Replace the automatic headline with your own, or give it back. |
 | `banner.<text>` · `banner.set` + `"text"` · `banner.clear` | Show your own 8-second banner / clear the banner queue. |
@@ -398,12 +407,12 @@ the eclipse overlay.
 | `a350f_where` | `à 12 km au nord de Mont-de-Marsan (Landes)` | Where the aircraft is, in words. |
 | `a350f_phase` | `attente` \| `roulage` \| `course` \| `decollage` \| `montee` \| `palier` \| `descente` \| `approche` \| `finale` \| `passage` \| `remise` \| `touchgo` \| `atterri` | Flight phase. |
 | `a350f_signal` | `live` \| `stale` \| `none` | Whether ADS-B is current (stale after 30 s without a position). |
-| `a350f_source` | `adsb.lol`, `adsb.fi`, `erreur` | Where the data came from — `erreur` when no source answers (relay not running?). |
+| `a350f_source` | `adsb.lol + adsb.fi`, `adsb.lol`, `adsb.fi`, `erreur` | Where the data came from (every source that answered in the last 2 minutes) — `erreur` when no source answers (relay not running?). |
 | `a350f_timer` / `a350f_time` | `01:23:45` / `1 h 23` | The on-screen timer, and a coarse version that changes once a minute. |
 | `a350f_status` / `a350f_label` | `Premier vol, en montée` / `en vol depuis` | Headline and timer label in sentence case. |
 | `a350f_alt` / `_alt_m` | `24 500 ft` / `7 470 m` | Current altitude (`au sol` on the ground). |
 | `a350f_speed` / `_speed_kmh` / `_vs` / `_hdg` / `_dist` | `460 kt` / `852 km/h` / `+1 800 ft/min` / `245° OSO` / `85 km` | Live figures (distance from Toulouse-Blagnac). |
-| `a350f_t_sched` / `_t_takeoff` / `_t_landing` | `10:30` | Scheduled and actual times. |
+| `a350f_t_sched` / `_t_land` / `_t_takeoff` / `_t_landing` | `10:30` | Scheduled take-off and landing, actual times. |
 | `a350f_alt_max` / `_speed_max` / `_distance` | `31 000 ft` / `470 kt` / `1 250 km` | Flight records so far. |
 | `a350f_reg` / `a350f_callsign` | `F-WXLD` / `AIB01` | Registration, and the callsign the transponder reports. |
 
@@ -426,7 +435,7 @@ JavaScript library, MIT-licensed, © 2019–2023 Don Cross, from `astronomy.brow
 license header inside that file.
 
 The A350F overlay displays third-party data, credited on screen: ADS-B data from
-[adsb.lol](https://adsb.lol) (ODbL) or [adsb.fi](https://adsb.fi) (personal,
+[adsb.lol](https://adsb.lol) (ODbL) and [adsb.fi](https://adsb.fi) (personal,
 non-commercial use, with attribution), and map tiles © OpenStreetMap contributors (ODbL).
 `a350f-places.js` is derived from [GeoNames](https://www.geonames.org) (CC BY 4.0); the
 Toulouse weather is the public METAR served by the US National Weather Service's

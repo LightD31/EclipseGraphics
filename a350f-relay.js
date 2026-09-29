@@ -7,7 +7,7 @@
    /adsb/* to those APIs from the same origin, so the page never makes a
    cross-origin request. No dependencies: Node 18+ (for the built-in fetch).
 
-     node a350f-relay.js [--port 8787] [--host 127.0.0.1]
+     node a350f-relay.js [--port 8787] [--host 127.0.0.1] [--every 5]
                          [--watch 39a53b[,hex…]|none] [--log flight-log]
 
    OBS browser source:  http://127.0.0.1:8787/a350f-first-flight.html
@@ -30,10 +30,20 @@
    The /adsb answers are the upstream's own readsb JSON ({"ac":[…]}) plus
    "src": the upstream that served it, "_age": how long ago (ms) the relay
    fetched it, and "_rec": a version of the recording that changes whenever
-   holes in its past get filled (so the page knows to fetch it again). Upstreams are tried in order; each is held to ~1
-   request/s (their published limit) and backs off for 30 s after an error,
-   and one answer is shared by every caller, so several browser sources on
-   the same machine cost the API one request.
+   holes in its past get filled (so the page knows to fetch it again).
+
+   Going easy on the APIs: the relay alone decides how often they are asked.
+   It asks each upstream about each watched aircraft every --every seconds
+   (5 by default; 15 while the aircraft isn't being seen), taking turns: the
+   least recently asked goes first, so with both up the aircraft gets a
+   fresh position every 2.5 s while each API sees one request every 5 s.
+   The pages, however many and however often they poll, get the latest of
+   those answers. Only a lookup by registration or callsign goes upstream on
+   its own, at most every 30 s. No upstream is asked twice within 2 s
+   (adsb.lol, whose limit varies with its load) or 1.1 s (adsb.fi: 1
+   request/s). After an error or a 429 an upstream is left alone for 30 s,
+   doubling while it keeps failing (up to 5 min), or for as long as its
+   Retry-After asks — and the other carries on alone, at its own pace.
 
    Flight recorder
      Every point the APIs return is kept, with all its fields, in memory and
@@ -65,6 +75,7 @@ const LOG_DIR = path.resolve(ROOT, arg('log', 'flight-log'));
 const UPSTREAMS = [
   {
     name: 'adsb.lol',
+    gap: 2000, /* its limit is dynamic ("based on load"): keep well clear */
     url: {
       hex: v => 'https://api.adsb.lol/v2/hex/' + v,
       reg: v => 'https://api.adsb.lol/v2/reg/' + v,
@@ -73,13 +84,14 @@ const UPSTREAMS = [
   },
   {
     name: 'adsb.fi',
+    gap: 1100, /* published limit: 1 request/s */
     url: {
       hex: v => 'https://opendata.adsb.fi/api/v2/hex/' + v,
       reg: v => 'https://opendata.adsb.fi/api/v2/registration/' + v,
       callsign: v => 'https://opendata.adsb.fi/api/v2/callsign/' + v,
     },
   },
-].map(u => Object.assign(u, { last: 0, failUntil: 0, requests: 0, errors: 0, lastOk: 0, lastErr: null }));
+].map(u => Object.assign(u, { last: 0, failUntil: 0, penalty: 0, requests: 0, errors: 0, lastOk: 0, lastErr: null }));
 /* adsb.lol's tar1090 traces: the whole day, and the last ~25 minutes */
 const TRACE_URL = (hex, kind) =>
   'https://globe.adsb.lol/data/traces/' + hex.slice(-2) + '/trace_' + kind + '_' + hex + '.json';
@@ -90,13 +102,12 @@ const VALID = {
   callsign: /^[A-Z0-9]{2,8}$/i,
 };
 const HEADERS = { 'User-Agent': 'EclipseGraphics-A350F-relay/1.1', 'Accept': 'application/json' };
-const MIN_INTERVAL = 1100;  /* per upstream: their limit is 1 req/s */
-const CACHE_MS = 1000;      /* one answer serves every caller for this long… */
-const WATCHED_CACHE_MS = 2500; /* …or this long when the watcher refreshes it anyway */
-const BACKOFF_MS = 30000;   /* after an error or a 429 */
+const EVERY_MS = Math.max(2, parseFloat(arg('every', '5')) || 5) * 1000; /* watcher poll, aircraft seen in the last 10 min */
+const IDLE_MS = Math.max(15000, 3 * EVERY_MS); /* watcher poll otherwise */
+const LOOKUP_CACHE_MS = 30000; /* a registration or callsign lookup serves every caller for this long */
+const BACKOFF_MS = 30000;   /* after an error or a 429, doubling while it keeps failing… */
+const BACKOFF_MAX_MS = 300000; /* …up to this */
 const TIMEOUT_MS = 6000;
-const WATCH_MS = 2000;      /* watcher poll, aircraft seen in the last 10 min */
-const IDLE_WATCH_MS = 10000; /* watcher poll otherwise */
 const GAP_MS = 60000;       /* a hole this long in the recording triggers a backfill */
 const TRACE_NEAR_MS = 8000; /* trace points closer than this to a recorded one are redundant */
 
@@ -117,23 +128,30 @@ const BOOT = Date.now();    /* with filled: lets a page tell that the past chang
 let filled = 0;             /* points put into holes (trace backfills) since start */
 const inflight = new Map(); /* "kind/value" -> Promise<{ at, body }> */
 
+/* The least recently asked upstream first: they take turns */
 async function fetchUpstream(kind, value) {
   const errors = [];
-  for (const up of UPSTREAMS) {
+  for (const up of UPSTREAMS.slice().sort((a, b) => a.last - b.last)) {
     const t = Date.now();
     if (t < up.failUntil) { errors.push(up.name + ': backing off'); continue; }
-    if (t - up.last < MIN_INTERVAL) { errors.push(up.name + ': rate limit'); continue; }
+    if (t - up.last < up.gap) { errors.push(up.name + ': rate limit'); continue; }
     up.last = t;
     up.requests++;
     try {
       const res = await fetch(up.url[kind](value), { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        const err = new Error('HTTP ' + res.status);
+        err.retryAfter = retryAfterMs(res.headers.get('retry-after'));
+        throw err;
+      }
       const json = await res.json();
       json.src = up.name;
       up.lastOk = Date.now();
+      up.penalty = 0;
       return json;
     } catch (e) {
-      up.failUntil = Date.now() + BACKOFF_MS;
+      up.penalty = Math.min(BACKOFF_MAX_MS, up.penalty ? up.penalty * 2 : BACKOFF_MS);
+      up.failUntil = Date.now() + Math.max(up.penalty, Math.min(e.retryAfter || 0, 3600000));
       up.errors++;
       up.lastErr = { at: Date.now(), msg: e.message };
       errors.push(up.name + ': ' + e.message);
@@ -141,6 +159,15 @@ async function fetchUpstream(kind, value) {
     }
   }
   throw new Error(errors.join('; '));
+}
+
+/* A Retry-After header (seconds, or an HTTP date) → ms; 0 without one */
+function retryAfterMs(h) {
+  if (!h) return 0;
+  const s = Number(h);
+  if (Number.isFinite(s)) return Math.max(0, s * 1000);
+  const d = Date.parse(h);
+  return Number.isFinite(d) ? Math.max(0, d - Date.now()) : 0;
 }
 
 /* → { at, body, gaps, stale? }. Every fresh answer goes through the
@@ -306,6 +333,14 @@ function watch(hex) {
   watched.set(hex, { next: 0, failSince: 0, lastBackfill: 0, pending: true, followUpAt: 0 });
   console.log('watching ' + hex);
 }
+/* How often the relay asks about a watched aircraft: each upstream every
+   --every seconds while it is being seen, less while it isn't (not flying
+   yet, or out of coverage) — the upstreams taking turns, so the more of them
+   are up, the more often an answer comes in */
+function watchEvery(hex) {
+  const t = Date.now(), up = UPSTREAMS.filter(u => t >= u.failUntil).length || 1;
+  return (t - flight(hex).seenAt < 600000 ? EVERY_MS : IDLE_MS) / up;
+}
 function requestBackfill(hex, why) {
   const w = watched.get(hex);
   if (!w) return;
@@ -321,8 +356,10 @@ setInterval(() => {
     if (w.pending && t - w.lastBackfill >= 60000) backfill(hex, w.lastBackfill ? 'retry' : 'start');
     if (w.followUpAt && t >= w.followUpAt) { w.followUpAt = 0; requestBackfill(hex, 'follow-up'); }
     if (t < w.next) continue;
-    w.next = t + (t - flight(hex).seenAt < 600000 ? WATCH_MS : IDLE_WATCH_MS);
-    adsb('hex', hex, 1500).then(e => {
+    // One request at a time, the next one timed once this is answered: by
+    // how many upstreams are up by then, and whether the aircraft is seen.
+    w.next = Infinity;
+    adsb('hex', hex, watchEvery(hex) / 2).finally(() => { w.next = t + watchEvery(hex); }).then(e => {
       if (e.stale) throw new Error('stale');
       if (w.failSince && Date.now() - w.failSince > 20000) requestBackfill(hex, 'reconnected');
       w.failSince = 0;
@@ -362,7 +399,8 @@ function status() {
                                      lastErr: u.lastErr, backoff: u.failUntil > t ? u.failUntil - t : 0 })),
     watched: [...watched.entries()].map(([hex, w]) => {
       const f = flight(hex), last = f.pts[f.pts.length - 1];
-      return { hex, points: f.pts.length, newest: last ? last._t : null, lastBackfill: w.lastBackfill, failSince: w.failSince };
+      return { hex, points: f.pts.length, newest: last ? last._t : null, lastBackfill: w.lastBackfill, failSince: w.failSince,
+               every: watchEvery(hex) };
     }),
     overlays: [...overlays.entries()].map(([id, o]) => Object.assign({ id, age: t - o.at }, o.state)),
     commands: commands.slice(-10),
@@ -481,9 +519,11 @@ http.createServer((req, res) => {
   if (m) {
     const kind = m[1], value = decodeURIComponent(m[2]);
     if (!VALID[kind].test(value)) return send(res, 400, JSON_TYPE, '{"error":"invalid ' + kind + '"}');
-    // an aircraft the page asks about is recorded from then on
+    // An aircraft the page asks about is recorded from then on, and the
+    // watcher's latest answer is what the page gets: it never goes upstream
+    // on a page's behalf while the watcher keeps that answer fresh.
     if (kind === 'hex') watch(value);
-    adsb(kind, value, watched.has(value.toLowerCase()) ? WATCHED_CACHE_MS : CACHE_MS).then(e => {
+    adsb(kind, value, kind === 'hex' ? watchEvery(value.toLowerCase()) + 3000 : LOOKUP_CACHE_MS).then(e => {
       const list = e.body.ac || e.body.aircraft || [];
       if (kind !== 'hex' && list.length <= 3) list.forEach(a => { if (VALID.hex.test(a.hex || '')) watch(a.hex); });
       // _rec changes whenever the recording's past does: the page re-syncs
@@ -494,5 +534,5 @@ http.createServer((req, res) => {
   serveStatic(req, res, url.pathname);
 }).listen(PORT, HOST, () => {
   console.log('A350F relay on http://' + HOST + ':' + PORT + '/a350f-first-flight.html');
-  console.log('ADS-B upstreams: ' + UPSTREAMS.map(u => u.name).join(' -> ') + ' · recording to ' + LOG_DIR);
+  console.log('ADS-B upstreams: ' + UPSTREAMS.map(u => u.name).join(' -> ') + ', every ' + EVERY_MS / 1000 + ' s · recording to ' + LOG_DIR);
 });

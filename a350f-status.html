@@ -152,6 +152,14 @@
           <button class="ghost" data-cmd="t0.reset">Horaire initial</button>
         </div>
         <div class="row">
+          <span>Atterrissage prévu</span>
+          <input class="time" id="iLand" placeholder="14:05">
+          <button data-input="iLand" data-prefix="land.">Régler</button>
+          <button data-cmd="land.+5">+5 min</button>
+          <button data-cmd="land.+15">+15 min</button>
+          <button class="ghost" data-cmd="land.reset">Horaire initial</button>
+        </div>
+        <div class="row">
           <span>Décollage réel</span>
           <button class="red" data-cmd="takeoff.now">Maintenant</button>
           <input class="time" id="iTo" placeholder="10:34">
@@ -232,12 +240,13 @@
     $('clock').textContent = hms.format(new Date(now));
     tile('tRelay', 'ok', 'en ligne', 'démarré ' + ago(now - s.boot));
     var w = s.watched[0];
+    var every = w && w.every ? ' · interrogé toutes les ' + String(Math.round(w.every / 100) / 10).replace('.', ',') + ' s' : '';
     if (!w) tile('tAdsb', 'warn', 'aucun avion suivi', '');
-    else if (!w.newest) tile('tAdsb', 'warn', 'pas encore vu', w.hex.toUpperCase() + ' · l\'avion n\'émet pas');
+    else if (!w.newest) tile('tAdsb', 'warn', 'pas encore vu', w.hex.toUpperCase() + ' · l\'avion n\'émet pas' + every);
     else {
       var age = now - w.newest;
       tile('tAdsb', age < 15000 ? 'ok' : age < 60000 ? 'warn' : 'bad', age < 15000 ? 'en direct' : 'dernier point ' + ago(age),
-           w.hex.toUpperCase() + (w.failSince ? ' · sources en erreur' : ''));
+           w.hex.toUpperCase() + (w.failSince ? ' · sources en erreur' : '') + every);
     }
     s.upstreams.forEach(function (u, i) {
       var level = u.backoff ? 'warn' : u.lastOk && now - u.lastOk < 60000 ? 'ok' : u.errors ? 'bad' : '';
@@ -274,7 +283,7 @@
           '<dt>Signal</dt><dd>' + esc(o.signal) + (o.seen != null ? ' · ' + o.seen + ' s · ' + esc(o.source) : '') + '</dd>' +
           '<dt>Altitude</dt><dd>' + esc(o.alt || '—') + ' · ' + esc(o.speed || '—') + '</dd>' +
           '<dt>Position</dt><dd>' + esc(o.where || '—') + '</dd>' +
-          '<dt>Horaires</dt><dd>prévu ' + esc(o.t0) + ' · décollage ' + esc(o.takeoff || '—') + ' · atterrissage ' + esc(o.landing || '—') + '</dd>' +
+          '<dt>Horaires</dt><dd>prévu ' + esc(o.t0) + '–' + esc(o.land || '—') + ' · décollage ' + esc(o.takeoff || '—') + ' · atterrissage ' + esc(o.landing || '—') + '</dd>' +
           '<dt>Trace</dt><dd>' + o.points + ' points · heure ' + esc(o.clock) + '</dd>' +
         '</dl></div>';
     }).join('');

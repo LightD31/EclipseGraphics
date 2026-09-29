@@ -828,6 +828,11 @@
       if (v !== 'neutral' && v !== 'auto') return false;
       ctl.mode = v;
     },
+    units: function (v) {
+      if (v === 'toggle') v = metric() ? 'aviation' : 'metric';
+      if (v !== 'metric' && v !== 'aviation') return false;
+      ctl.units = v;
+    },
     // banner.<TEXT> | banner.set (+ "text") | banner.clear — not stored
     banner: function (v, data) {
       if (v === 'clear') { flashQ.length = 0; flashUntil = Math.min(flashUntil, Date.now()); return false; }
@@ -878,6 +883,20 @@
   function ft(v) { return nf.format(Math.round(v / 25) * 25); }
   function m(v) { return nf.format(Math.round(v * 0.3048 / 10) * 10); }
   function kmh(kt) { return nf.format(Math.round(kt * 1.852)); }
+  /* Units: aviation (ft, kt, ft/min — the default) or metric (m, km/h, m/s)
+     first, the other one as the secondary figure. ?units=metric, or the
+     units.* commands at run time.
+     U(kind, value) → { n: number, u: unit, s: the same in the other units } */
+  function metric() { return (ctl.units || params.get('units')) === 'metric'; }
+  function U(kind, v) {
+    var met = metric(), ms = (v * 0.00508).toFixed(1).replace('.', ',').replace(/^(\d)/, '+$1').replace('+0,0', '0');
+    if (kind === 'alt') return met ? { n: m(v), u: 'm', s: ft(v) + ' ft' } : { n: ft(v), u: 'ft', s: m(v) + ' m' };
+    if (kind === 'spd') return met ? { n: kmh(v), u: 'km/h', s: nf.format(Math.round(v)) + ' kt' }
+                                   : { n: nf.format(Math.round(v)), u: 'kt', s: kmh(v) + ' km/h' };
+    /* vertical speed */ return met ? { n: ms.replace('-', '−'), u: 'm/s', s: vsTxt(v) + ' ft/min' }
+                                    : { n: vsTxt(v), u: 'ft/min', s: ms.replace('-', '−') + ' m/s' };
+  }
+  function uTxt(kind, v) { var x = U(kind, v); return x.n + ' ' + x.u; }
   function vsTxt(v) { var r = Math.round(v / 50) * 50; return (r > 0 ? '+' : r < 0 ? '−' : '') + nf.format(Math.abs(r)); }
   function hdg(v) { return String(Math.round(v) % 360).padStart(3, '0') + '°'; }
   var DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
@@ -1477,17 +1496,17 @@
       case 'decollage':
         c = ['Décollage', 'L\'A350F a décollé à ' + fmtTS(ev.t), rwy]; break;
       case 'fl100':
-        c = ['Montée', 'L\'A350F franchit 10 000 ft', m(10000) + ' m']; break;
+        c = ['Montée', 'L\'A350F franchit ' + uTxt('alt', 10000), U('alt', 10000).s]; break;
       case 'palier':
-        c = ['Palier', 'En palier à ' + ft(v.alt) + ' ft', m(v.alt) + ' m · FL' + pad(Math.round(v.alt / 100)).padStart(3, '0')]; break;
+        c = ['Palier', 'En palier à ' + uTxt('alt', v.alt), U('alt', v.alt).s + ' · FL' + pad(Math.round(v.alt / 100)).padStart(3, '0')]; break;
       case 'mach':
-        c = ['Vitesse', 'Mach ' + v.m.toFixed(2).replace('.', ',') + ' atteint', 'vitesse sol ' + v.gs + ' kt · ' + kmh(v.gs) + ' km/h']; break;
+        c = ['Vitesse', 'Mach ' + v.m.toFixed(2).replace('.', ',') + ' atteint', 'vitesse sol ' + uTxt('spd', v.gs) + ' · ' + U('spd', v.gs).s]; break;
       case 'descente':
-        c = ['Descente', 'Début de la descente', 'altitude max ' + ft(v.max) + ' ft · ' + m(v.max) + ' m']; break;
+        c = ['Descente', 'Début de la descente', 'altitude max ' + uTxt('alt', v.max) + ' · ' + U('alt', v.max).s]; break;
       case 'passage':
-        c = ['Toulouse', 'Passage à basse altitude', 'à ' + ft(v.agl) + ' ft au-dessus de la piste']; break;
+        c = ['Toulouse', 'Passage à basse altitude', 'à ' + uTxt('alt', v.agl) + ' au-dessus de la piste']; break;
       case 'remise':
-        c = ['Toulouse', 'Remise des gaz', 'au plus bas à ' + ft(v.agl) + ' ft du sol']; break;
+        c = ['Toulouse', 'Remise des gaz', 'au plus bas à ' + uTxt('alt', v.agl) + ' du sol']; break;
       case 'touchgo':
         c = ['Toulouse', 'Toucher et remise des gaz', rwy]; break;
       case 'ocean':
@@ -1534,8 +1553,8 @@
   function wxSegs() {
     if (!wx || Date.now() / 1000 - wx.obsTime > 7200) return null; // none, or too old to show
     var raw = ' ' + (wx.rawOb || '') + ' ';
-    var wind = wx.wspd === 0 ? 'calme' : (wx.wdir === 'VRB' ? 'variable' : pad(wx.wdir).padStart(3, '0') + '°') + ' · ' + wx.wspd + ' kt';
-    var gust = wx.wgst ? 'rafales ' + wx.wgst + ' kt' : kmh(wx.wspd || 0) + ' km/h';
+    var wind = wx.wspd === 0 ? 'calme' : (wx.wdir === 'VRB' ? 'variable' : pad(wx.wdir).padStart(3, '0') + '°') + ' · ' + uTxt('spd', wx.wspd);
+    var gust = wx.wgst ? 'rafales ' + uTxt('spd', wx.wgst) : U('spd', wx.wspd || 0).s;
     var sky, vis = '';
     var vm = / (\d{4}) /.exec(raw.replace(/ \d{5}(G\d\d)?KT /, ' '));
     if (vm) vis = +vm[1] >= 9999 ? 'visibilité 10 km et plus' : 'visibilité ' + nf.format(+vm[1]) + ' m';
@@ -1543,7 +1562,7 @@
     else if (!wx.clouds || !wx.clouds.length || /^(CLR|SKC|NSC|NCD)$/.test(wx.clouds[0].cover)) sky = 'dégagé';
     else {
       var c = wx.clouds[0];
-      sky = (CLOUDS[c.cover] || c.cover) + (c.base != null ? ' à ' + nf.format(c.base) + ' ft' : '');
+      sky = (CLOUDS[c.cover] || c.cover) + (c.base != null ? ' à ' + (metric() ? m(c.base) + ' m' : nf.format(c.base) + ' ft') : '');
     }
     if (/CB/.test(raw)) sky += ' · cumulonimbus';
     return [['Météo Toulouse', 'à ' + fmtTS(wx.obsTime * 1000), 'METAR LFBO'], ['Vent', wind, gust],
@@ -1634,16 +1653,17 @@
       sAlt = 'A350F'; sInfo = 'Toulouse-Blagnac · premier vol';
     } else if (live.gnd) {
       sAlt = 'Au sol';
-      sSpd = live.gs >= 3 ? Math.round(live.gs) + ' kt' : '';
+      sSpd = live.gs >= 3 ? uTxt('spd', live.gs) : '';
       sInfo = (d < 6 ? 'Toulouse-Blagnac' : nf.format(d) + ' km de Toulouse') + (live.gs >= 3 ? ' · cap ' + hdg(live.trk) : '');
     } else {
-      sAlt = ft(live.alt) + ' ft';
-      sSpd = Math.round(live.gs) + ' kt';
-      sInfo = (live.vs > 300 ? '▲ ' : live.vs < -300 ? '▼ ' : '') + vsTxt(live.vs) + ' ft/min · cap ' +
+      sAlt = uTxt('alt', live.alt);
+      sSpd = uTxt('spd', live.gs);
+      sInfo = (live.vs > 300 ? '▲ ' : live.vs < -300 ? '▼ ' : '') + uTxt('vs', live.vs) + ' · cap ' +
               hdg(live.trk) + ' · ' + (whereNow() || nf.format(d) + ' km de Toulouse');
     }
     setText(el.sAlt, sAlt); setText(el.sSpd, sSpd); setText(el.sInfo, sInfo);
-    setText(el.tagalt, !live ? 'F-WXLD' : live.gnd ? 'AU SOL' : 'FL' + pad(Math.round(live.alt / 100)).padStart(3, '0'));
+    setText(el.tagalt, !live ? 'F-WXLD' : live.gnd ? 'AU SOL'
+                       : metric() ? uTxt('alt', live.alt) : 'FL' + pad(Math.round(live.alt / 100)).padStart(3, '0'));
     var wtext = live && !live.gnd ? whereNow() : '';
     setText(el.capwhere, wtext ? wtext.charAt(0).toUpperCase() + wtext.slice(1) : '');
     fb('where', live ? whereNow() : '');
@@ -1653,13 +1673,17 @@
       setText(el.tk6, 'Indicatif');
     } else {
       if (live.gnd) { setVal(1, 'AU SOL', ''); setText($('ts1'), d < 6 ? 'Toulouse-Blagnac' : 'altitude terrain'); }
-      else { setVal(1, ft(live.alt), 'ft'); setText($('ts1'), m(live.alt) + ' m · FL' + String(Math.round(live.alt / 100)).padStart(3, '0')); }
-      setVal(2, nf.format(Math.round(live.gs)), 'kt'); setText($('ts2'), kmh(live.gs) + ' km/h');
-      if (live.gnd) { setVal(3, '0', 'ft/min'); setText($('ts3'), 'au sol'); }
       else {
-        setVal(3, vsTxt(live.vs), 'ft/min');
-        setText($('ts3'), (live.vs > 300 ? 'en montée' : live.vs < -300 ? 'en descente' : 'en palier') +
-                          ' · ' + (live.vs * 0.00508).toFixed(1).replace('.', ',') + ' m/s');
+        var ua = U('alt', live.alt);
+        setVal(1, ua.n, ua.u); setText($('ts1'), ua.s + ' · FL' + String(Math.round(live.alt / 100)).padStart(3, '0'));
+      }
+      var us = U('spd', live.gs);
+      setVal(2, us.n, us.u); setText($('ts2'), us.s);
+      var uv = U('vs', live.gnd ? 0 : live.vs);
+      if (live.gnd) { setVal(3, '0', uv.u); setText($('ts3'), 'au sol'); }
+      else {
+        setVal(3, uv.n, uv.u);
+        setText($('ts3'), (live.vs > 300 ? 'en montée' : live.vs < -300 ? 'en descente' : 'en palier') + ' · ' + uv.s);
       }
       setVal(4, hdg(live.trk), ''); setText($('ts4'), compass(live.trk, true));
       setVal(5, d < 10 ? d.toFixed(1).replace('.', ',') : nf.format(d), 'km');
@@ -1667,7 +1691,7 @@
       if (live.mach != null && !live.gnd) {
         setText(el.tk6, 'Mach');
         setVal(6, live.mach.toFixed(2).replace('.', ','), '');
-        setText($('ts6'), (live.ias != null ? 'IAS ' + Math.round(live.ias) + ' kt' : '') +
+        setText($('ts6'), (live.ias != null ? 'IAS ' + uTxt('spd', live.ias) : '') +
                           (live.oat != null ? ' · ' + Math.round(live.oat) + ' °C ext.' : ''));
       } else {
         setText(el.tk6, 'Indicatif');
@@ -1692,12 +1716,12 @@
     } else if (ph === 'atterri') {
       var flown = to ? fmtCoarse(st.landing - to) : '–';
       sets = [[['Décollage', to ? fmtTS(to) : '–', ''], ['Atterrissage', fmtTS(st.landing), to ? flown + ' de vol' : ''],
-               ['Altitude max', ft(st.altMax) + ' ft', m(st.altMax) + ' m'], ['Distance', nf.format(st.dist) + ' km', 'parcourus']],
+               ['Altitude max', uTxt('alt', st.altMax), U('alt', st.altMax).s], ['Distance', nf.format(st.dist) + ' km', 'parcourus']],
               [['Premier vol A350-900', '4 h 05', '14 juin 2013'], ['Premier vol A350-1000', '4 h 18', '24 nov. 2016'],
-               ['Premier vol A350F', flown, 'aujourd\'hui'], ['Vitesse max', Math.round(st.gsMax) + ' kt', kmh(st.gsMax) + ' km/h']]];
+               ['Premier vol A350F', flown, 'aujourd\'hui'], ['Vitesse max', uTxt('spd', st.gsMax), U('spd', st.gsMax).s]]];
     } else {
-      sets = [[['Décollage', to ? fmtT(to) : '–', ''], ['Altitude max', ft(st.altMax) + ' ft', m(st.altMax) + ' m'],
-               ['Vitesse max', Math.round(st.gsMax) + ' kt', kmh(st.gsMax) + ' km/h'], ['Distance', nf.format(st.dist) + ' km', 'parcourus']]];
+      sets = [[['Décollage', to ? fmtT(to) : '–', ''], ['Altitude max', uTxt('alt', st.altMax), U('alt', st.altMax).s],
+               ['Vitesse max', uTxt('spd', st.gsMax), U('spd', st.gsMax).s], ['Distance', nf.format(st.dist) + ' km', 'parcourus']]];
     }
     var setId = (!st.airSeen ? 'pre' : ph === 'atterri' ? 'post' : 'air') + Math.floor(Date.now() / 12000) % sets.length;
     showTicker(setId, sets[Math.floor(Date.now() / 12000) % sets.length]);
@@ -1708,7 +1732,8 @@
 
     // Card headers + credits
     setText(el.mapsub, live ? nf.format(d) + ' km de TLS' : 'TOULOUSE');
-    setText(el.profsub, st.altMax ? 'ALT. MAX ' + ft(st.altMax) + ' ft' : 'EN ATTENTE');
+    setText(el.profsub, st.altMax ? 'ALT. MAX ' + uTxt('alt', st.altMax) : 'EN ATTENTE');
+    fb('units', metric() ? 'metric' : 'aviation');
     // (the lower third's 202 px square only has room for the short form)
     var small = !bar.classList.contains('fs');
     setText(el.attrib, (TILES_ON ? (small && !params.get('attrib') ? '© OpenStreetMap' : TILE_ATTRIB) + ' · ' : '') +
@@ -2023,7 +2048,8 @@
       var col = $('rcol').getBoundingClientRect();
       var tick = document.querySelector('.rv-ticker').getBoundingClientRect();
       var card = $('mapscene'), cr = card.offsetWidth && !bar.classList.contains('nocard') ? card.getBoundingClientRect() : null;
-      box = { l: 90 + 86, t: 40, r: col.left - sr.left - 70, b: (cr ? cr.top : tick.top) - sr.top - 64 };
+      box = { l: 90 + 86, t: 40, r: col.left - sr.left - (metric() ? 110 : 70), // room for "900 km/h"
+               b: (cr ? cr.top : tick.top) - sr.top - 64 };
     } else {
       box = { l: 50, t: 10, r: w - 40, b: h - 24 };
     }
@@ -2048,17 +2074,20 @@
     o.push('<defs><linearGradient id="pfill" x1="0" y1="0" x2="0" y2="1">' +
            '<stop offset="0" stop-color="#e1000f" stop-opacity="0.75"/>' +
            '<stop offset="1" stop-color="#e1000f" stop-opacity="0.08"/></linearGradient></defs>');
-    var step = aMax <= 20000 ? 5000 : 10000;
-    for (var a = step; a <= aMax; a += step) {
+    // gridlines on round values of whichever unit is on screen
+    var met = metric();
+    var aK = met ? 0.3048 : 1, step = met ? (aMax * aK <= 6000 ? 1000 : 2000) : (aMax <= 20000 ? 5000 : 10000);
+    for (var av = step; av / aK <= aMax; av += step) {
+      var a = av / aK;
       o.push('<line x1="' + box.l + '" x2="' + box.r + '" y1="' + Y(a).toFixed(1) + '" y2="' + Y(a).toFixed(1) +
              '" stroke="rgba(255,255,255,0.16)" stroke-dasharray="3 7"/>');
       o.push('<text x="' + (box.l - 8) + '" y="' + (Y(a) + fsz * 0.35).toFixed(1) + '" text-anchor="end" font-size="' + fsz +
-             '" fill="rgba(255,255,255,0.6)">' + nf.format(a) + (big ? ' ft' : '') + '</text>');
+             '" fill="rgba(255,255,255,0.6)">' + nf.format(av) + (big ? (met ? ' m' : ' ft') : '') + '</text>');
     }
-    var sStep = sMax <= 400 ? 100 : 200;
-    for (var sv = sStep; sv <= sMax; sv += sStep) {
-      o.push('<text x="' + (box.r + 8) + '" y="' + (YS(sv) + fsz * 0.35).toFixed(1) + '" font-size="' + fsz +
-             '" fill="rgba(160,190,255,0.75)">' + sv + (big ? ' kt' : '') + '</text>');
+    var sK = met ? 1.852 : 1, sStep = met ? (sMax * sK <= 700 ? 200 : 300) : (sMax <= 400 ? 100 : 200);
+    for (var sv = sStep; sv / sK <= sMax; sv += sStep) {
+      o.push('<text x="' + (box.r + 8) + '" y="' + (YS(sv / sK) + fsz * 0.35).toFixed(1) + '" font-size="' + fsz +
+             '" fill="rgba(160,190,255,0.75)">' + sv + (big ? (met ? ' km/h' : ' kt') : '') + '</text>');
     }
     o.push('<line x1="' + box.l + '" x2="' + box.r + '" y1="' + box.b + '" y2="' + box.b + '" stroke="#fff" stroke-width="2"/>');
     // time ticks on round hours / half hours, at most ~6 of them

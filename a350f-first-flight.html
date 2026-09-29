@@ -111,6 +111,9 @@
      darks become the broadcast navy and roads/labels stay neutral.
      ?tilestyle=invert|tint|raw picks the treatment. */
   #tiles { position: absolute; inset: 0; overflow: hidden; }
+  /* black under the tiles, so a tile still loading comes out as the plain
+     navy once screened, not a lighter patch */
+  #tiles.invert, #tiles.tint { background: #000; }
   #tiles.invert { filter: grayscale(1) invert(1) brightness(0.72) contrast(1.35); }
   #tiles.tint { filter: grayscale(1) brightness(1.35) contrast(1.1); }
   #tint.raw { display: none; }
@@ -183,7 +186,42 @@
     text-shadow: 0 0 3px #000; pointer-events: none;
   }
 
-  #right { flex: 1 1 auto; min-width: 0; }
+  #right { flex: 1 1 auto; min-width: 0; position: relative; }
+
+  /* ===== Event banner =====
+     A moment of the flight (take-off, 10 000 ft, level-off, low pass,
+     landing…) or the operator's own text, for ~8 s: wipes open above the
+     strap in the lower third, under the map caption in the fullscreen. */
+  #flash {
+    position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 4;
+    display: flex; align-items: stretch; height: 52px; white-space: nowrap;
+    clip-path: inset(0 100% 0 0); pointer-events: none;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  }
+  #flash .ftag {
+    display: flex; align-items: center; padding: 0 18px;
+    background: var(--red); color: #fff;
+    font-size: 19px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+  }
+  #flash .fbody {
+    display: flex; align-items: center; gap: 16px; padding: 0 26px;
+    background: var(--navy); color: #fff;
+  }
+  #flash .ftitle { font-size: 27px; font-weight: 900; text-transform: uppercase; }
+  #flash .fsub { font-size: 19px; color: rgba(255,255,255,0.65); font-variant-numeric: tabular-nums; }
+  #flash .fsub:empty { display: none; }
+  #flash.show { animation: kFlashIn 0.55s cubic-bezier(0.22,1,0.36,1) both; }
+  #flash.hide { animation: kFlashOut 0.4s cubic-bezier(0.5,0,0.75,0) both; }
+  @keyframes kFlashIn  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  @keyframes kFlashOut { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 0 100%); } }
+  #bar:not(.on) #flash { display: none; }
+  #bar.fs #flash { left: 90px; top: 150px; bottom: auto; height: 66px; }
+  #bar.fs #flash .ftag { font-size: 21px; padding: 0 22px; }
+  #bar.fs #flash .ftitle { font-size: 34px; }
+  #bar.fs #flash .fsub { font-size: 22px; }
+  /* over the navy map a navy body would vanish: white, like the strap */
+  #bar.fs #flash .fbody { background: #fff; color: #111; }
+  #bar.fs #flash .fsub { color: #555; }
 
   /* ===== White info strap ===== */
   .rv-strap { width: fit-content; max-width: 85vw; }
@@ -453,6 +491,7 @@
   </div>
   </div>
   <div id="right">
+  <div id="flash" aria-hidden="true"><span class="ftag" id="ftag"></span><span class="fbody"><span class="ftitle" id="ftitle"></span><span class="fsub" id="fsub"></span></span></div>
   <div class="rv rv-strap">
   <div id="strap">
     <b class="lt" id="sAlt">A350F</b>
@@ -704,9 +743,9 @@
   var POLL_MS = Math.max(1000, (parseFloat(params.get('poll')) || 2) * 1000);
   var TAKEOFF_OVERRIDE = params.get('takeoff') ? parisTime(DAY, params.get('takeoff')) : null;
   var HOME = { lat: 43.629101, lon: 1.36382, elev: 499 };  // LFBO reference point
-  var RUNWAYS = [  // threshold to threshold: 14R/32L, 14L/32R
-    [43.64410, 1.34593, 43.61900, 1.37210],
-    [43.63740, 1.35762, 43.61560, 1.38022]
+  var RUNWAYS = [  // threshold to threshold, then the two ends' names
+    [43.64410, 1.34593, 43.61900, 1.37210, '14R', '32L'],
+    [43.63740, 1.35762, 43.61560, 1.38022, '14L', '32R']
   ];
 
   var DEMO = params.has('demo');
@@ -784,6 +823,13 @@
       if (v === 'toggle') v = ctl.mode === 'neutral' ? 'auto' : 'neutral';
       if (v !== 'neutral' && v !== 'auto') return false;
       ctl.mode = v;
+    },
+    // banner.<TEXT> | banner.set (+ "text") | banner.clear — not stored
+    banner: function (v, data) {
+      if (v === 'clear') { flashQ.length = 0; flashUntil = Math.min(flashUntil, Date.now()); return false; }
+      var text = String(v === 'set' ? data.text || '' : v).trim().slice(0, 90);
+      if (text) flashQ.unshift({ id: 'custom@' + Date.now(), type: 'custom', t: now(), v: { text: text } });
+      return false;
     }
   };
   window.a350fDataCommand = function (cmd, data) {
@@ -902,8 +948,12 @@
     if (!gnd && alt != null && alt < HOME.elev + 250 && gs < 50 &&
         distKm(a.lat, a.lon, HOME.lat, HOME.lon) < 6) gnd = true;
     var vs = typeof a.baro_rate === 'number' ? a.baro_rate : typeof a.geom_rate === 'number' ? a.geom_rate : 0;
-    return { t: Math.round(t), lat: +a.lat.toFixed(5), lon: +a.lon.toFixed(5),
-             a: gnd || alt == null ? null : Math.round(alt), s: Math.round(gs), g: gnd ? 1 : 0, v: Math.round(vs) };
+    var trk = typeof a.track === 'number' ? a.track : typeof a.true_heading === 'number' ? a.true_heading : null;
+    var p = { t: Math.round(t), lat: +a.lat.toFixed(5), lon: +a.lon.toFixed(5),
+              a: gnd || alt == null ? null : Math.round(alt), s: Math.round(gs), g: gnd ? 1 : 0, v: Math.round(vs) };
+    if (trk != null) p.k = Math.round(trk);
+    if (typeof a.mach === 'number' && !gnd) p.m = +a.mach.toFixed(3);
+    return p;
   }
   /* In time order; a repeat of a report already held (same position within
      a second: the same answer seen twice) is dropped.
@@ -919,15 +969,23 @@
     trackDirty = true;
     return lo === S.length - 1 ? 'append' : 'insert';
   }
-  // Distance (km) from a point to the nearest LFBO runway centreline
-  function runwayKm(lat, lon) {
-    var kx = 111.32 * Math.cos(lat * RAD), ky = 110.57, best = Infinity;
-    RUNWAYS.forEach(function (r) {
-      var ax = (r[1] - lon) * kx, ay = (r[0] - lat) * ky, bx = (r[3] - lon) * kx, by = (r[2] - lat) * ky;
-      var dx = bx - ax, dy = by - ay, u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy)));
-      best = Math.min(best, Math.hypot(ax + u * dx, ay + u * dy));
-    });
-    return best;
+  // Distance (km) from a point to a runway centreline (the nearest if none given)
+  function runwayKm(lat, lon, r) {
+    if (!r) return Math.min.apply(null, RUNWAYS.map(function (q) { return runwayKm(lat, lon, q); }));
+    var kx = 111.32 * Math.cos(lat * RAD), ky = 110.57;
+    var ax = (r[1] - lon) * kx, ay = (r[0] - lat) * ky, bx = (r[3] - lon) * kx, by = (r[2] - lat) * ky;
+    var dx = bx - ax, dy = by - ay, u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(ax + u * dx, ay + u * dy);
+  }
+  // Which runway a sample is on, going which way: "32L" (null if unclear)
+  function runwayName(p) {
+    if (!p || p.k == null) return null;
+    var best = null, bd = 1.2;
+    RUNWAYS.forEach(function (r) { var d = runwayKm(p.lat, p.lon, r); if (d < bd) { bd = d; best = r; } });
+    if (!best) return null;
+    // on "14R" you roll from the 14R threshold towards the far end (~143°)
+    var qfu = bearing(best[0], best[1], best[2], best[3]);
+    return Math.abs(((p.k - qfu + 540) % 360) - 180) < 60 ? best[4] : best[5];
   }
   /* Notable moments, derived from the samples like everything else in st —
      so a replay after a hole is filled finds the same ones, with the same
@@ -938,6 +996,47 @@
     var id = type + '@' + t;
     for (var i = st.events.length - 1; i >= 0; i--) if (st.events[i].id === id) return;
     st.events.push({ id: id, type: type, t: t, at: at || t, v: v || null });
+  }
+  /* The flight's milestones, for the banners and the profile: 10 000 ft on
+     the way up, each new level-off above it (4 000 ft from the previous
+     one), Mach 0,80 / 0,85, the first sustained descent after the top, the
+     full-stop landing. */
+  function detectEvents(prev, p) {
+    if (p.g) {
+      // slowed right down on the runway: a landing, not a touch-and-go
+      if (st.landing && !st.landSeen && p.s < 40) {
+        addEvent('atterrissage', st.landing, { rwy: runwayName(st.landingAt) }, p.t);
+        st.landSeen = true;
+      }
+      return;
+    }
+    if (p.a == null) return;
+    if (!st.fl100 && prev && prev.a != null && prev.a < 10000 && p.a >= 10000 && p.v > 0) {
+      st.fl100 = true;
+      addEvent('fl100', p.t, { vs: p.v });
+    }
+    if (Math.abs(p.v) < 300 && st.lvl && Math.abs(p.a - st.lvl.a) < 300) {
+      if (!st.lvl.done && p.t - st.lvl.t >= 60000 && p.a >= 10000 && Math.abs(p.a - (st.lastLvl || 0)) >= 4000) {
+        st.lvl.done = true;
+        st.lastLvl = st.lvl.a;
+        addEvent('palier', st.lvl.t, { alt: Math.round(st.lvl.a / 100) * 100 }, p.t);
+      }
+    } else st.lvl = Math.abs(p.v) < 300 ? { t: p.t, a: p.a } : null;
+    if (p.m != null) {
+      st.machMax = Math.max(st.machMax || 0, p.m);
+      [0.8, 0.85].forEach(function (th) {
+        if (p.m >= th && (st.machTh || 0) < th) { st.machTh = th; addEvent('mach', p.t, { m: th, gs: p.s }); }
+      });
+    }
+    if (!st.descSeen && st.altMax >= 20000) {
+      if (p.v < -800) {
+        st.desc = st.desc || { t: p.t };
+        if (p.t - st.desc.t >= 60000 && p.a < st.altMax - 1500) {
+          st.descSeen = true;
+          addEvent('descente', st.desc.t, { max: st.altMax }, p.t);
+        }
+      } else st.desc = null;
+    }
   }
   /* Take-off, landing and the records, from a sample and the one before it.
      Take-off, on the first airborne sample only: seen leaving the ground →
@@ -951,6 +1050,7 @@
       if (prev && prev.g && p.t - prev.t < 60000) st.takeoff = Math.round((prev.t + p.t) / 2);
       else if (agl0 < 3000 && p.v > 300) st.takeoff = Math.round(p.t - agl0 / p.v * 60000);
       else if (agl0 < 400) st.takeoff = p.t;
+      if (st.takeoff) addEvent('decollage', st.takeoff, { rwy: runwayName(prev && prev.g ? prev : p) }, p.t);
     }
     if (!gnd) st.airSeen = true;
     // Back in the air after a touchdown (two airborne samples in a row, so a
@@ -959,11 +1059,12 @@
     if (st.landing && !gnd) {
       st.reair = (st.reair || 0) + 1;
       if (st.reair >= 2) {
-        if (p.t - st.landing < 120000) addEvent('touchgo', st.landing, null, p.t);
+        if (p.t - st.landing < 120000) addEvent('touchgo', st.landing, { rwy: runwayName(st.landingAt) }, p.t);
         st.landing = null;
+        st.landSeen = false;
       }
     } else st.reair = 0;
-    if (gnd && st.airSeen && !st.landing) st.landing = p.t;
+    if (gnd && st.airSeen && !st.landing) { st.landing = p.t; st.landingAt = p; }
     // Low over a runway and then climbing away without touching down: a low
     // pass (lowest point under 300 ft) or a go-around. Armed only once the
     // aircraft has been above 1 500 ft since it last touched the ground, so
@@ -980,15 +1081,19 @@
     }
     if (!gnd) {
       st.altMax = Math.max(st.altMax, p.a || 0);
+      st.landSeen = false;
       st.gsMax = Math.max(st.gsMax, p.s);
       if (prev && !prev.g) st.dist += distKm(prev.lat, prev.lon, p.lat, p.lon);
     }
+    detectEvents(prev, p);
   }
   // After points land in the past (a hole filled), replay the whole flight.
   function recompute() {
     st.takeoff = null; st.landing = null; st.airSeen = false;
     st.altMax = 0; st.gsMax = 0; st.dist = 0;
     st.events = []; st.appr = null; st.reair = 0; st.armed = false;
+    st.fl100 = false; st.lvl = null; st.lastLvl = 0; st.machTh = 0; st.machMax = 0;
+    st.desc = null; st.descSeen = false; st.landSeen = false; st.landingAt = null;
     for (var i = 0; i < st.samples.length; i++) step(st.samples[i - 1], st.samples[i]);
   }
 
@@ -1348,8 +1453,64 @@
   pushStatics();
   setInterval(pushStatics, 60000);
 
+  // ===== Event banners =====
+  // Each event is announced once, while it is news (under 90 s old): a
+  // reload or a history merge brings back older ones for the profile, not
+  // for the banner. Queued, 8 s each.
+  var announced = {}, flashQ = [], flashUntil = 0, flashNext = 0, flashN = 0;
+  var ANN_WINDOW = 90000 * (DEMO ? Math.min(DEMO_SPEED, 20) : 1), FLASH_MS = 8000;
+  var flashEl = $('flash');
+  function eventCard(ev) {
+    var v = ev.v || {}, rwy = v.rwy ? 'piste ' + v.rwy : 'Toulouse-Blagnac', c;
+    switch (ev.type) {
+      case 'decollage':
+        c = ['Décollage', 'L\'A350F a décollé à ' + fmtTS(ev.t), rwy]; break;
+      case 'fl100':
+        c = ['Montée', 'L\'A350F franchit 10 000 ft', m(10000) + ' m']; break;
+      case 'palier':
+        c = ['Palier', 'En palier à ' + ft(v.alt) + ' ft', m(v.alt) + ' m · FL' + pad(Math.round(v.alt / 100)).padStart(3, '0')]; break;
+      case 'mach':
+        c = ['Vitesse', 'Mach ' + v.m.toFixed(2).replace('.', ',') + ' atteint', 'vitesse sol ' + v.gs + ' kt · ' + kmh(v.gs) + ' km/h']; break;
+      case 'descente':
+        c = ['Descente', 'Début de la descente', 'altitude max ' + ft(v.max) + ' ft · ' + m(v.max) + ' m']; break;
+      case 'passage':
+        c = ['Toulouse', 'Passage à basse altitude', 'à ' + ft(v.agl) + ' ft au-dessus de la piste']; break;
+      case 'remise':
+        c = ['Toulouse', 'Remise des gaz', 'au plus bas à ' + ft(v.agl) + ' ft du sol']; break;
+      case 'touchgo':
+        c = ['Toulouse', 'Toucher et remise des gaz', rwy]; break;
+      case 'atterrissage':
+        var to = takeoffTime();
+        c = ['Atterrissage', 'Atterrissage à ' + fmtTS(ev.t), (to ? fmtCoarse(ev.t - to) + ' de vol · ' : '') + rwy]; break;
+      default:
+        c = ['Info', v.text || '', ''];
+    }
+    return { tag: c[0], title: c[1], sub: c[2] };
+  }
+  function announce(t) {
+    st.events.forEach(function (ev) {
+      if (!announced[ev.id] && ev.at <= t && t - ev.at < ANN_WINDOW) { announced[ev.id] = true; flashQ.push(ev); }
+    });
+    var r = Date.now();
+    if (flashUntil && r >= flashUntil) { flashEl.className = 'hide'; flashUntil = 0; flashNext = r + 700; }
+    if (!flashUntil && flashQ.length && r >= flashNext) {
+      var ev = flashQ.shift(), c = eventCard(ev);
+      $('ftag').textContent = c.tag;
+      $('ftitle').textContent = c.title;
+      $('fsub').textContent = c.sub;
+      flashEl.className = '';
+      void flashEl.offsetWidth; // restart the wipe
+      flashEl.className = 'show';
+      flashUntil = r + FLASH_MS;
+      fb('event', ev.type);
+      fb('event_text', c.title + (c.sub ? ' (' + c.sub + ')' : ''));
+      fb('event_n', String(++flashN));
+    }
+  }
+
   function updateText() {
     var t = now(), T0 = schedTime(); // the operator may have moved it
+    announce(t);
     var ph = phaseOf(t);
     lastPhase = ph;
     var to = takeoffTime();
@@ -1838,6 +1999,29 @@
       var ls = S[S.length - 1], lalt = ls.g ? 0 : Math.max(0, (ls.a || HOME.elev) - HOME.elev);
       o.push('<circle cx="' + x1 + '" cy="' + Y(lalt).toFixed(1) + '" r="' + (big ? 8 : 5) +
              '" fill="#e1000f" stroke="#fff" stroke-width="' + (big ? 3 : 2) + '"/>');
+      // the flight's other milestones, as diamonds on the altitude line
+      var TAGS = { fl100: 'FL100', palier: 'PALIER', mach: 'MACH', descente: 'DESCENTE',
+                   passage: 'PASSAGE BAS', remise: 'REMISE DES GAZ', touchgo: 'TOUCH & GO', ocean: 'ATLANTIQUE' };
+      var placed = []; // label boxes so far: stack a label up a row rather than overlap
+      st.events.forEach(function (ev) {
+        if (!TAGS[ev.type] || ev.t < ta || ev.t > tb) return;
+        var i = 0;
+        while (i < S.length - 1 && S[i + 1].t <= ev.t) i++;
+        var sm = S[i], ea = sm.g ? 0 : Math.max(0, (sm.a == null ? HOME.elev : sm.a) - HOME.elev);
+        var ex = X(ev.t), ey = Y(ea), dsz = big ? 7 : 4;
+        o.push('<path d="M' + ex.toFixed(1) + ' ' + (ey - dsz).toFixed(1) + 'l' + dsz + ' ' + dsz + 'l-' + dsz + ' ' + dsz +
+               'l-' + dsz + '-' + dsz + 'z" fill="#fff" stroke="#10173a" stroke-width="1.5"/>');
+        if (!big) return;
+        var label = TAGS[ev.type] + (ev.type === 'mach' ? ' ' + ev.v.m.toFixed(2).replace('.', ',') : '');
+        var half = label.length * (fsz - 3) * 0.3, ly = ey - dsz - 8;
+        for (var k = 0; k < placed.length; k++) {
+          var q = placed[k];
+          if (Math.abs(q.y - ly) < fsz && ex - half < q.x + q.half + 6 && ex + half > q.x - q.half - 6) { ly = q.y - fsz - 2; k = -1; }
+        }
+        placed.push({ x: ex, y: ly, half: half });
+        o.push('<text x="' + ex.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' +
+               (fsz - 3) + '" font-weight="900" fill="#fff" stroke="#10173a" stroke-width="4" paint-order="stroke">' + label + '</text>');
+      });
       [[to, 'DÉCOLLAGE'], [st.landing, 'ATTERRISSAGE']].forEach(function (mk) {
         if (!mk[0] || mk[0] < ta) return;
         var mx = X(mk[0]).toFixed(1);

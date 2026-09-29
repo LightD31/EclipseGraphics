@@ -786,7 +786,8 @@
   var MSN = params.get('msn') || '700';
   var DAY = params.get('date') || '2026-09-29';
   var T0 = parisTime(DAY, params.get('t0') || '10:30');   // scheduled take-off
-  var DUR = (parseFloat(params.get('dur')) || 240) * 60000; // planned flight time
+  var LAND = parisTime(DAY, params.get('land') || '14:05'); // planned landing
+  var DUR = params.get('land') ? 0 : (parseFloat(params.get('dur')) || 0) * 60000; // or a planned flight time
   var POLL_MS = Math.max(1000, (parseFloat(params.get('poll')) || 2) * 1000);
   var TAKEOFF_OVERRIDE = params.get('takeoff') ? parisTime(DAY, params.get('takeoff')) : null;
   var HOME = { lat: 43.629101, lon: 1.36382, elev: 499 };  // LFBO reference point
@@ -832,7 +833,7 @@
   // fullscreen may be two sources): each receives the command, and the
   // storage event brings any that missed it in step.
   var CTL_KEY = 'a350f:ctl:' + (DEMO ? 'demo' : REG + ':' + DAY);
-  var ctl = { t0: null, takeoff: null, headline: '', mode: 'auto', units: null };
+  var ctl = { t0: null, takeoff: null, land: null, headline: '', mode: 'auto', units: null };
   function loadCtl() {
     try { Object.assign(ctl, JSON.parse(localStorage.getItem(CTL_KEY) || '{}')); } catch (e) {}
   }
@@ -845,8 +846,12 @@
     if (e.key === CTL_KEY) { loadCtl(); ctlChanged(); }
   });
   function schedTime() { return ctl.t0 || T0; }
+  // Planned landing: the operator's, or ?land (14:05 by default), or ?dur
+  // minutes after take-off
+  function landTime() { return ctl.land || (DUR ? (takeoffTime() || schedTime()) + DUR : LAND); }
   /* t0.HH:MM | t0.+N | t0.-N | t0.reset          scheduled take-off
      takeoff.now | takeoff.HH:MM[:SS] | takeoff.auto   actual take-off
+     land.HH:MM | land.+N | land.-N | land.reset  planned landing
      headline.<TEXT> | headline.set (+ "text") | headline.auto
      mode.neutral | mode.auto | mode.toggle        factual wording only */
   var dataCommands = {
@@ -854,6 +859,12 @@
       if (v === 'reset') ctl.t0 = null;
       else if (/^[+-]\d+$/.test(v)) ctl.t0 = schedTime() + parseInt(v, 10) * 60000;
       else if (parseHM(v) != null) ctl.t0 = parseHM(v);
+      else return false;
+    },
+    land: function (v) {
+      if (v === 'reset') ctl.land = null;
+      else if (/^[+-]\d+$/.test(v)) ctl.land = landTime() + parseInt(v, 10) * 60000;
+      else if (parseHM(v) != null) ctl.land = parseHM(v);
       else return false;
     },
     takeoff: function (v) {
@@ -1485,7 +1496,7 @@
       main: c.contains('swap') ? 'profile' : 'map', card: c.contains('nocard') ? 'off' : 'on',
       map: c.contains('follow') ? 'follow' : 'track', units: metric() ? 'metric' : 'aviation', mode: ctl.mode,
       headline: el.status.textContent, custom: !!ctl.headline, label: el.cdlabel.textContent, timer: el.countdown.textContent,
-      phase: lastPhase, alert: alertCode, t0: fmtTS(schedTime()), clock: fmtT(t),
+      phase: lastPhase, alert: alertCode, t0: fmtTS(schedTime()), land: fmtTS(landTime()), clock: fmtT(t),
       takeoff: takeoffTime() ? fmtT(takeoffTime()) : '', landing: st.landing ? fmtT(st.landing) : '',
       signal: DEMO ? 'demo' : live && Date.now() - live.seenAt < 30000 ? 'live' : live ? 'stale' : 'none',
       seen: live ? Math.round((Date.now() - live.seenAt) / 1000) : null, source: sourceName,
@@ -1566,12 +1577,21 @@
     textCache['tv' + i] = key;
     node.innerHTML = esc(num) + (unit ? '<small>' + esc(unit) + '</small>' : '');
   }
-  var TIMELINE = $('timeline');
-  for (var h = 1; h * 3600000 < DUR; h++) {
-    var mk = document.createElement('div');
-    mk.className = 'mk';
-    mk.style.left = (h * 3600000 / DUR * 100) + '%';
-    TIMELINE.appendChild(mk);
+  // The progress line's hour marks, over the planned flight (redrawn when
+  // the take-off or the planned landing moves)
+  var TIMELINE = $('timeline'), timelineDur = 0;
+  function planned() { return Math.max(600000, landTime() - (takeoffTime() || schedTime())); }
+  function drawTimeline() {
+    var dur = Math.round(planned() / 60000) * 60000;
+    if (dur === timelineDur) return;
+    timelineDur = dur;
+    TIMELINE.querySelectorAll('.mk').forEach(function (m) { m.remove(); });
+    for (var h = 1; h * 3600000 < dur; h++) {
+      var mk = document.createElement('div');
+      mk.className = 'mk';
+      mk.style.left = (h * 3600000 / dur * 100) + '%';
+      TIMELINE.appendChild(mk);
+    }
   }
   setText(el.sReg, REG);
   setText(el.capreg, REG);
@@ -1862,7 +1882,7 @@
     // milestones in flight.
     var sets;
     if (!st.airSeen) {
-      sets = [[['Décollage prévu', fmtTS(T0), ''], ['Avion', REG, 'MSN ' + MSN],
+      sets = [[['Décollage prévu', fmtTS(T0), 'retour prévu ' + fmtTS(landTime())], ['Avion', REG, 'MSN ' + MSN],
                ['Moteurs', '2 × Trent XWB-97', 'Rolls-Royce'], ['Charge utile', '111 t', 'max.']],
               [['Longueur', '70,8 m', ''], ['Envergure', '64,75 m', ''],
                ['Masse max. au décollage', '319 t', ''], ['Autonomie', '8 700 km', '4 700 NM']],
@@ -1876,14 +1896,21 @@
               [['1er vol A350-900', '4 h 05', '2013'], ['1er vol A350-1000', '4 h 18', '2016'],
                ['1er vol A350F', flown, 'aujourd\'hui'], ['Vitesse max', uTxt('spd', st.gsMax), '']]];
     } else {
+      var left = landTime() - t;
       sets = [[['Décollage', to ? fmtT(to) : '–', ''], ['Altitude max', uTxt('alt', st.altMax), U('alt', st.altMax).s],
-               ['Vitesse max', uTxt('spd', st.gsMax), U('spd', st.gsMax).s], ['Distance', nf.format(st.dist) + ' km', 'parcourus']]];
+               ['Vitesse max', uTxt('spd', st.gsMax), U('spd', st.gsMax).s], ['Distance', nf.format(st.dist) + ' km', 'parcourus']],
+              [['Atterrissage prévu', fmtTS(landTime()), left > 60000 ? 'dans ' + fmtCoarse(left) : 'à Toulouse'],
+               ['Durée prévue', fmtCoarse(planned()), 'de vol'],
+               ['Mach max', st.machMax ? st.machMax.toFixed(2).replace('.', ',') : '–', ''],
+               ['Moteurs', '2 × Trent XWB-97', 'Rolls-Royce']]];
     }
     var setId = (!st.airSeen ? 'pre' : ph === 'atterri' ? 'post' : 'air') + Math.floor(Date.now() / 12000) % sets.length;
     showTicker(setId, sets[Math.floor(Date.now() / 12000) % sets.length]);
 
     // Progress: flight time against the planned duration
-    var p = to ? ((st.landing || t) - to) / DUR : 0;
+    drawTimeline();
+    fb('t_land', fmtTS(landTime()));
+    var p = to ? ((st.landing || t) - to) / planned() : 0;
     el.progressFill.style.width = (Math.min(1, Math.max(0, p)) * 100).toFixed(2) + '%';
 
     // Card headers + credits
@@ -2247,7 +2274,7 @@
     if (!from && st.airSeen) st.samples.some(function (s) { return !s.g && (from = s.t); });
     var S = from ? st.samples.filter(function (s) { return s.t >= from - 5 * 60000; }) : [];
     var ta = from ? from - 5 * 60000 : Math.min(t, T0) - 10 * 60000;
-    var tb = Math.max(t, (to || T0) + DUR);
+    var tb = Math.max(t, landTime());
     if (st.landing) tb = Math.max(st.landing + 10 * 60000, Math.min(tb, st.landing + 20 * 60000));
     S = S.filter(function (s) { return s.t <= tb; }); // taxiing long after landing
     var aMax = Math.max(10000, Math.ceil((st.altMax + 3000) / 10000) * 10000);

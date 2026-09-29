@@ -340,7 +340,8 @@ relay otherwise (each overlay picks them up within 2 s).
 |---|---|
 | `?t0=HH:MM` | Scheduled take-off, local time (default `10:30`). |
 | `?date=YYYY-MM-DD` | Flight day (default `2026-09-29`) — for a postponed flight. |
-| `?dur=N` | Planned flight time in minutes (default `240`), for the progress line and the profile's time axis. |
+| `?land=HH:MM` | Planned landing, local time (default `14:05`): the progress line, the profile's time axis and the ticker. |
+| `?dur=N` | Instead of `?land`: a planned flight time in minutes after take-off. |
 | `?takeoff=HH:MM[:SS]` | Actual take-off time, when the page missed it. |
 | `?reg=` / `?hex=` / `?callsign=` | Aircraft to track (default `F-WXLD` / `39a53b`; callsign optional). |
 | `?msn=N` | MSN shown on screen (default `700`). |
@@ -380,6 +381,7 @@ with `{"a350f": "<command>"}`, or `window.a350fCommand('<command>')`.
 | `card.on` / `card.off` / `card.toggle` | Corner card (whichever view is in it). |
 | `map.track` / `map.follow` / `map.toggle` | Fullscreen map framing: the whole track (default), or riding with the aircraft. |
 | `t0.HH:MM` · `t0.+N` / `t0.-N` · `t0.reset` | Reschedule the take-off (countdown, ticker and profile follow), shift it by N minutes, or go back to `?t0`. |
+| `land.HH:MM` · `land.+N` / `land.-N` · `land.reset` | Move the planned landing (progress line, profile, ticker), shift it by N minutes, or go back to `?land`. |
 | `takeoff.now` · `takeoff.HH:MM[:SS]` · `takeoff.auto` | Set the actual take-off time (when the page missed it), or back to what ADS-B showed. |
 | `headline.<text>` · `headline.set` + `"text"` · `headline.auto` | Replace the automatic headline with your own, or give it back. |
 | `banner.<text>` · `banner.set` + `"text"` · `banner.clear` | Show your own 8-second banner / clear the banner queue. |
@@ -410,7 +412,7 @@ the eclipse overlay.
 | `a350f_status` / `a350f_label` | `Premier vol, en montée` / `en vol depuis` | Headline and timer label in sentence case. |
 | `a350f_alt` / `_alt_m` | `24 500 ft` / `7 470 m` | Current altitude (`au sol` on the ground). |
 | `a350f_speed` / `_speed_kmh` / `_vs` / `_hdg` / `_dist` | `460 kt` / `852 km/h` / `+1 800 ft/min` / `245° OSO` / `85 km` | Live figures (distance from Toulouse-Blagnac). |
-| `a350f_t_sched` / `_t_takeoff` / `_t_landing` | `10:30` | Scheduled and actual times. |
+| `a350f_t_sched` / `_t_land` / `_t_takeoff` / `_t_landing` | `10:30` | Scheduled take-off and landing, actual times. |
 | `a350f_alt_max` / `_speed_max` / `_distance` | `31 000 ft` / `470 kt` / `1 250 km` | Flight records so far. |
 | `a350f_reg` / `a350f_callsign` | `F-WXLD` / `AIB01` | Registration, and the callsign the transponder reports. |
 

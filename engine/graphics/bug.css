@@ -1,0 +1,17 @@
+/* ===== Bug: a corner of chips ===== */
+.gfx-bug { --bg-chip: var(--c-base); --bg-live: var(--c-accent); }
+.bg-pos { position: absolute; }
+.bg-row { display: flex; align-items: center; gap: calc(10 * var(--u)); }
+.bg-pos[data-anchor$=r] .bg-row { flex-direction: row-reverse; }
+.bg-logo { display: block; height: calc(var(--bg-logo-h, 72px) * var(--s, 1) * var(--gs, 1)); width: auto; filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35)); }
+.bg-chip {
+  display: flex; align-items: baseline; gap: calc(10 * var(--u));
+  height: calc(46 * var(--u)); padding: 0 calc(18 * var(--u)); align-items: center;
+  background: var(--bg-chip); color: var(--c-onBase); white-space: nowrap;
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.bg-live { background: var(--bg-live); color: var(--c-onAccent); font-size: calc(19 * var(--u)); }
+.bg-text { font-size: calc(22 * var(--u)); }
+.bg-clabel { font-size: calc(15 * var(--u)); font-weight: var(--w-strong); text-transform: uppercase; letter-spacing: 1px; color: var(--c-onBase-62); }
+.bg-cvalue { font-size: calc(26 * var(--u)); }
+.bg-clock { background: var(--c-base2); }

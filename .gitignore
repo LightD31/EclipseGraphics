@@ -1,2 +1,9 @@
 # flight recordings written by a350f-relay.js
 flight-log/
+
+# the overlay server's runtime state on this machine: settings (OBS password),
+# what is on air per show — and the previous versions of edited shows
+data/
+shows/*.bak
+shows/*.tmp
+shows/*.deleted

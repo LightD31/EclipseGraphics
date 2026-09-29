@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Régie · habillage</title>
+<!-- The operator's page, never on air: http://127.0.0.1:8787/panel.html
+     (also works as an OBS custom browser dock). Everything is saved as you
+     type and shows on the outputs at once. -->
+<link rel="stylesheet" href="engine/fonts/fonts.css">
+<link rel="stylesheet" href="engine/panel/panel.css">
+</head>
+<body>
+<header id="top">
+  <h1><span class="tag">Régie</span><span id="showTitle">…</span></h1>
+  <select id="showPick" title="Projet actif"></select>
+  <span class="sp"></span>
+  <span class="pill" id="pServer" title="Serveur">Serveur</span>
+  <span class="pill" id="pObs" title="Lien OBS websocket">OBS</span>
+  <span class="pill" id="pComp" title="Companion">Companion</span>
+  <button id="bUndo" class="ghost" title="Annuler la dernière modification (Ctrl+Z)">↶ Annuler</button>
+  <button id="bAllOff" class="red" title="Retire tous les graphiques de l'antenne">Tout retirer</button>
+  <span id="clock">--:--:--</span>
+</header>
+<div id="offline" hidden>Connexion au serveur perdue — nouvel essai…</div>
+<main id="app">
+  <aside id="rundown">
+    <div class="rd-head">
+      <h2>À l'antenne</h2>
+      <button id="bAdd" class="small">+ Ajouter</button>
+    </div>
+    <div id="rdList"></div>
+  </aside>
+  <section id="work">
+    <div id="previewWrap">
+      <div id="previewBox"><iframe id="preview" title="Aperçu" tabindex="-1"></iframe></div>
+      <div id="previewBar">
+        <span>Aperçu</span>
+        <select id="pvMode" title="Ce que montre l'aperçu">
+          <option value="sel">antenne + graphique sélectionné</option>
+          <option value="air">antenne seulement</option>
+        </select>
+        <select id="pvBg" title="Fond de l'aperçu">
+          <option value="photo">fond : image test</option>
+          <option value="checker">fond : damier</option>
+          <option value="dark">fond : sombre</option>
+          <option value="light">fond : clair</option>
+        </select>
+        <button id="bReplay" class="small ghost" title="Rejoue l'entrée du graphique sélectionné dans l'aperçu">▶ Rejouer l'entrée</button>
+        <span class="sp"></span>
+        <a id="outLink" href="overlay.html" target="_blank" rel="noopener">ouvrir la sortie ↗</a>
+      </div>
+    </div>
+    <nav id="tabs">
+      <button data-tab="edit" class="on">Graphique</button>
+      <button data-tab="theme">Thème</button>
+      <button data-tab="motion">Animations</button>
+      <button data-tab="vars">Variables</button>
+      <button data-tab="modules">Modules</button>
+      <button data-tab="shows">Projets</button>
+      <button data-tab="settings">Réglages</button>
+    </nav>
+    <div id="tab"></div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="engine/shared.js"></script>
+<script src="engine/theme.js"></script>
+<script src="engine/motion.js"></script>
+<script src="engine/gfx.js"></script>
+<script src="engine/graphics/bandeau.js"></script>
+<script src="engine/graphics/synthe.js"></script>
+<script src="engine/graphics/flash.js"></script>
+<script src="engine/graphics/ticker.js"></script>
+<script src="engine/graphics/bug.js"></script>
+<script src="engine/graphics/card.js"></script>
+<script src="engine/panel/forms.js"></script>
+<script src="engine/panel/panel.js"></script>
+</body>
+</html>

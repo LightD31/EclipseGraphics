@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 96">
+  <!-- Sample logo for the demo show: an eclipse glyph and a word. Replace it
+       with your own from the panel (Réglages → Médias). -->
+  <defs>
+    <mask id="bite"><rect width="96" height="96" fill="#fff"/><circle cx="62" cy="40" r="32" fill="#000"/></mask>
+  </defs>
+  <rect x="0" y="0" width="96" height="96" rx="10" fill="#10173a"/>
+  <circle cx="48" cy="48" r="32" fill="#e1000f" mask="url(#bite)"/>
+  <circle cx="62" cy="40" r="32" fill="none" stroke="#ffffff" stroke-width="3" stroke-opacity="0.55"/>
+  <text x="110" y="45" font-family="Arial Narrow, Arial, sans-serif" font-weight="900" font-size="34" fill="#ffffff">DIRECT</text>
+  <text x="110" y="78" font-family="Arial Narrow, Arial, sans-serif" font-weight="700" font-size="22" fill="#ffffff" fill-opacity="0.7">HABILLAGE</text>
+</svg>

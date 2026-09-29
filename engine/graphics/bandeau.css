@@ -1,0 +1,156 @@
+/* ===== Bandeau: the lower third =====
+   Heights of the eclipse and A350F bar (strap 46, band 92, ticker 54, line
+   10: a 202 px panel), at the theme's scale. Colours: the theme's tokens,
+   unless the graphic sets its own (--bd-*). */
+.gfx-bandeau {
+  --panel: calc(202 * var(--u));
+  --bd-band: var(--c-accent); --bd-band-fg: var(--c-onAccent);
+  --bd-strap: var(--c-surface); --bd-strap-fg: var(--c-onSurface);
+  --bd-ticker: var(--c-base); --bd-panel: var(--c-base);
+  --col-w: 46vw;
+}
+.bd-bar {
+  position: absolute; left: var(--mx, 0px); right: var(--mx, 0px); bottom: var(--my, 0px);
+  display: flex; align-items: flex-end;
+  filter: drop-shadow(0 0 0 transparent);
+}
+.gfx-bandeau[data-width=fit] .bd-bar { right: auto; max-width: calc(100% - 2 * var(--mx, 0px)); }
+.gfx-bandeau[data-width=fit] .bd-right { flex: 0 1 auto; }
+.gfx-bandeau[data-width=fit] .bd-headline { flex: 0 1 auto; }
+
+.bd-panelbox { flex: 0 0 var(--panel); height: var(--panel); position: relative; overflow: hidden; }
+.bd-panel {
+  position: relative; width: 100%; height: 100%; overflow: hidden;
+  background: var(--bd-panel); isolation: isolate;
+}
+.bd-vis { position: absolute; inset: 0; }
+.bd-vis[data-place=hidden] { display: none; }
+.bd-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.bd-right { flex: 1 1 auto; min-width: 0; position: relative; }
+.bd-flashslot { position: absolute; left: 0; bottom: 100%; width: 100%; height: 0; z-index: 4; }
+
+/* White strap */
+.bd-strapbox { width: fit-content; max-width: 85vw; }
+.bd-strap {
+  display: inline-flex; align-items: center; gap: calc(14 * var(--u));
+  height: calc(46 * var(--u)); padding: 0 calc(22 * var(--u));
+  background: var(--bd-strap); color: var(--bd-strap-fg);
+  white-space: nowrap; border-radius: var(--radius) var(--radius) 0 0;
+}
+.bd-strap b { font-size: calc(24 * var(--u)); font-weight: var(--w-strong); font-variant-numeric: tabular-nums; }
+.bd-strap b:empty, .bd-acc:empty, .bd-info:empty { display: none; }
+.bd-acc { color: var(--c-highlight); font-weight: 700; font-size: calc(19 * var(--u)); }
+.bd-info { font-size: calc(19 * var(--u)); font-variant-numeric: tabular-nums; }
+.bd-live { font-size: calc(15 * var(--u)); color: var(--c-live); }
+.bd-live.idle { color: var(--c-live-idle); }
+
+/* Headline band */
+.bd-col { position: relative; }
+.bd-band {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center;
+  height: calc(92 * var(--u)); padding: 0 calc(34 * var(--u));
+  background: var(--bd-band); background-image: var(--gloss); color: var(--bd-band-fg);
+}
+.gfx-bandeau[data-width=fit] .bd-band, .gfx-bandeau:not([data-width=full]) .bd-band { border-radius: 0 var(--radius) 0 0; }
+.bd-tag {
+  flex: 0 0 auto; margin-right: calc(22 * var(--u)); padding: calc(7 * var(--u)) calc(12 * var(--u));
+  background: var(--c-base); color: var(--c-onBase);
+  font-size: calc(20 * var(--u)); line-height: 1; border-radius: var(--radius);
+}
+.bd-headline { flex: 1 1 auto; min-width: 0; }
+.bd-title {
+  font-size: calc(46 * var(--u)); line-height: 1.22;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.12);
+}
+.bd-timer {
+  margin-left: auto; padding-left: calc(30 * var(--u));
+  display: flex; align-items: baseline; gap: calc(16 * var(--u)); flex: 0 0 auto;
+}
+.bd-tlabel { font-size: calc(19 * var(--u)); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+.bd-tvalue { font-size: calc(56 * var(--u)); line-height: 1; white-space: nowrap; }
+.bd-sheen {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 34%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: translateX(-300%) skewX(-15deg); pointer-events: none;
+}
+.bd-extra { display: none; }
+
+/* Ticker */
+.bd-ticker {
+  display: flex; align-items: center;
+  height: calc(54 * var(--u)); padding-left: calc(34 * var(--u));
+  background: var(--bd-ticker); color: var(--c-onBase);
+  font-size: calc(21 * var(--u)); white-space: nowrap; overflow: hidden;
+}
+.bd-segs { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.bd-seg { display: flex; align-items: baseline; gap: calc(10 * var(--u)); padding-right: calc(34 * var(--u)); }
+.bd-seg .lbl { font-weight: var(--w-strong); text-transform: uppercase; }
+.bd-seg .val { font-variant-numeric: tabular-nums; }
+.bd-seg .sub { font-size: calc(17 * var(--u)); color: var(--c-onBase-55); }
+.bd-seg .lbl:empty, .bd-seg .val:empty, .bd-seg .sub:empty { display: none; }
+.bd-clock {
+  margin-left: auto; align-self: stretch;
+  display: flex; align-items: center; padding: 0 calc(26 * var(--u));
+  background: var(--c-base2); font-size: calc(24 * var(--u)); white-space: nowrap;
+}
+
+/* Progress line */
+.bd-timeline { position: relative; height: calc(10 * var(--u)); background: var(--c-base2); }
+.bd-fill { height: 100%; width: 0%; background: var(--bd-band); }
+.bd-mk { position: absolute; top: 0; width: 3px; height: 100%; background: var(--c-onBase); }
+
+/* ===== Fullscreen (and recap) =====
+   The panel's visual takes the canvas and the blocks float on it: strap
+   top-right, the band as a right-hand column (headline right-aligned, the
+   big timer), anything a module adds under it, the ticker and the line at
+   the bottom, a corner card bottom-left. Designed for a 1920×1080 source. */
+.gfx-bandeau:not([data-layout=lower]) .bd-bar { position: absolute; inset: 0; display: block; filter: none; }
+.gfx-bandeau:not([data-layout=lower]) .bd-panelbox { position: absolute; inset: 0; height: auto; }
+.gfx-bandeau:not([data-layout=lower]) .bd-panel { position: absolute; inset: 0; }
+.gfx-bandeau:not([data-layout=lower]) .bd-right { position: absolute; inset: 0; }
+.gfx-bandeau:not([data-layout=lower]) .bd-strapbox { position: absolute; top: 0; right: 0; width: auto; max-width: none; z-index: 3; }
+.gfx-bandeau:not([data-layout=lower]) .bd-strap { height: 64px; padding: 0 44px; gap: 18px; border-radius: 0 0 0 var(--radius); }
+.gfx-bandeau:not([data-layout=lower]) .bd-strap b { font-size: 30px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-acc { font-size: 23px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-info { font-size: 21px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-live { font-size: 17px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-col { position: absolute; top: 64px; right: 0; width: var(--col-w); z-index: 3; }
+.gfx-bandeau:not([data-layout=lower]) .bd-band {
+  height: auto; flex-direction: column; align-items: flex-end; gap: 18px; padding: 30px 44px; border-radius: 0;
+}
+.gfx-bandeau:not([data-layout=lower]) .bd-headline { width: 100%; flex: 0 0 auto; }
+.gfx-bandeau:not([data-layout=lower]) .bd-title { text-align: right; }
+.gfx-bandeau:not([data-layout=lower]) .bd-tag { margin: 0; font-size: 22px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-timer { margin: 0; padding: 0; flex-direction: column; align-items: flex-end; gap: 8px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-tlabel { font-size: 26px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-tvalue { font-size: 118px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-extra { display: block; }
+.gfx-bandeau:not([data-layout=lower]) .bd-tickerbox { position: absolute; left: 0; right: 0; bottom: var(--ticker-bottom, 18px); z-index: 3; }
+.gfx-bandeau:not([data-layout=lower]) .bd-ticker { height: 76px; padding-left: 44px; font-size: 23px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-seg { padding-right: 40px; gap: 10px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-seg .sub { font-size: 18px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-clock { font-size: 32px; padding: 0 36px; }
+.gfx-bandeau:not([data-layout=lower]) .bd-timeline { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; z-index: 3; }
+.gfx-bandeau:not([data-layout=lower]) .bd-flashslot { position: absolute; left: 90px; top: 196px; bottom: auto; width: auto; }
+
+/* The visuals: one on the canvas, the other in the corner card */
+.gfx-bandeau .bd-vis[data-place=canvas] { inset: 0; }
+.gfx-bandeau .bd-vis[data-place=card] {
+  inset: auto; left: 0; bottom: var(--bottom-h, 94px); width: var(--card-w, 24vw); height: auto; min-height: 60px;
+  z-index: 2; overflow: hidden;
+  background: var(--c-base-88); border: 1px solid var(--c-onBase-22);
+  animation: gfxAppear 0.5s ease-out 0.5s backwards;
+}
+.gfx-bandeau .bd-vis-a[data-place=card] .bd-img { position: relative; height: auto; aspect-ratio: 16 / 9; }
+/* A header on any card: its name, a detail on the right */
+.gfx-bandeau .bd-cardhead {
+  display: none; position: absolute; left: 0; right: 0; top: 0; z-index: 3;
+  align-items: baseline; justify-content: space-between;
+  padding: 10px 14px 4px; color: var(--c-onBase); pointer-events: none;
+  background: linear-gradient(var(--c-base-95), var(--c-base-fade));
+}
+.gfx-bandeau .bd-vis[data-place=card] .bd-cardhead { display: flex; }
+.gfx-bandeau .bd-cardhead b { font-size: 17px; font-weight: var(--w-strong); letter-spacing: 0.5px; text-transform: uppercase; }
+.gfx-bandeau .bd-cardhead span { font-size: 15px; color: var(--c-onBase-62); font-variant-numeric: tabular-nums; }

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "title": "Premier vol A350F · Toulouse",
+  "timezone": "Europe/Paris",
+  "theme": { "preset": "direct" },
+  "motion": { "preset": "direct" },
+  "modules": {
+    "a350f": {
+      "enabled": true,
+      "settings": {
+        "reg": "F-WXLD",
+        "hex": "39a53b",
+        "callsign": "",
+        "msn": "700",
+        "date": "2026-09-29",
+        "t0": "10:30",
+        "land": "14:05",
+        "relay": "",
+        "units": "aviation",
+        "recap": "manual",
+        "graphic": "bandeau",
+        "flash": "flash",
+        "demo": false,
+        "speed": 30,
+        "from": -8
+      }
+    }
+  },
+  "variables": [],
+  "graphics": [
+    {
+      "id": "bandeau",
+      "type": "bandeau",
+      "name": "Bandeau du vol",
+      "fields": {
+        "band": {
+          "headline": "{{a350f.title}}",
+          "tag": "",
+          "timer": { "mode": "text", "label": "{{a350f.timer_label}}", "value": "{{a350f.timer}}" }
+        },
+        "strap": {
+          "enabled": true,
+          "main": "{{a350f.s_alt}}",
+          "second": "{{a350f.s_spd}}",
+          "accent": "{{a350f.reg}}",
+          "info": "{{a350f.s_info}}",
+          "badge": true,
+          "badgeText": "{{a350f.badge}}",
+          "badgeIdle": "{{a350f.badge_idle}}"
+        },
+        "strapFull": {
+          "enabled": true,
+          "main": "Airbus A350F",
+          "second": "",
+          "accent": "{{a350f.reg}}",
+          "info": "{{a350f.s_id}}"
+        },
+        "ticker": { "enabled": true, "source": "var", "var": "a350f.ticker", "rotate": 12, "clock": true, "clockText": "{{a350f.clock}}" },
+        "timeline": { "enabled": true, "mode": "var", "progressVar": "a350f.progress", "marksVar": "a350f.marks" },
+        "panel": { "source": "module:a350f.map" },
+        "card": { "source": "module:a350f.profile", "width": 24 },
+        "column": { "sources": [ { "source": "module:a350f.telemetry" }, { "source": "module:a350f.recap" } ] },
+        "layout": { "width": "full", "mx": 0, "my": 0 }
+      },
+      "motion": {}
+    },
+    {
+      "id": "flash",
+      "type": "flash",
+      "name": "Événements du vol",
+      "fields": {
+        "anchor": "bandeau:bandeau",
+        "duration": 8,
+        "defaultTag": "Info",
+        "presets": [
+          { "tag": "Toulouse", "title": "Les pilotes saluent Toulouse", "sub": "", "dur": "" },
+          { "tag": "Info", "title": "Retour prévu vers 14 h", "sub": "", "dur": "" }
+        ]
+      },
+      "motion": {}
+    }
+  ]
+}

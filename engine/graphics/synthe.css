@@ -1,0 +1,75 @@
+/* ===== Synthé: name and function ===== */
+.gfx-synthe {
+  --sy-name: var(--c-accent); --sy-name-fg: var(--c-onAccent);
+  --sy-role: var(--c-surface); --sy-role-fg: var(--c-onSurface);
+}
+.sy-pos { position: absolute; }
+.sy-box { position: relative; display: flex; align-items: flex-end; }
+.sy-texts { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.sy-pos[data-anchor$=r] .sy-box { flex-direction: row-reverse; }
+.sy-pos[data-anchor$=r] .sy-texts { align-items: flex-end; text-align: right; }
+.sy-pos[data-anchor$=c] .sy-texts { align-items: center; text-align: center; }
+.sy-nametext { display: block; white-space: nowrap; }
+.gfx-synthe[data-upper=off] .sy-nametext { text-transform: none; }
+.sy-roletext { display: block; white-space: nowrap; }
+.sy-tag {
+  font-size: calc(18 * var(--u)); line-height: 1; padding: calc(7 * var(--u)) calc(12 * var(--u));
+  background: var(--c-base); color: var(--c-onBase); border-radius: var(--radius) var(--radius) 0 0;
+}
+.sy-photo { flex: 0 0 auto; overflow: hidden; background: var(--c-base); width: calc(128 * var(--u)); height: calc(128 * var(--u)); }
+.sy-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sy-line { position: absolute; display: block; background: var(--sy-name); }
+
+/* Empilé: the house strap — the name on the accent band, the function on
+   the light strap under it, both as wide as their text */
+.gfx-synthe[data-style=empile] .sy-name {
+  background: var(--sy-name); background-image: var(--gloss); color: var(--sy-name-fg);
+  padding: calc(10 * var(--u)) calc(26 * var(--u)) calc(8 * var(--u));
+  font-size: calc(54 * var(--u)); line-height: 1.06;
+  border-radius: 0 var(--radius) 0 0;
+}
+.gfx-synthe[data-style=empile] .sy-nametext { text-shadow: 0 2px 0 rgba(0, 0, 0, 0.12); }
+.gfx-synthe[data-style=empile] .sy-role {
+  background: var(--sy-role); color: var(--sy-role-fg);
+  padding: calc(9 * var(--u)) calc(26 * var(--u)) calc(10 * var(--u));
+  font-size: calc(28 * var(--u)); line-height: 1.15; border-radius: 0 0 var(--radius) var(--radius);
+}
+.gfx-synthe[data-style=empile] .sy-line { display: none; }
+.gfx-synthe[data-style=empile] .sy-photo { height: calc(136 * var(--u)); width: calc(136 * var(--u)); }
+
+/* Barre: a dark block, an accent bar down its side */
+.gfx-synthe[data-style=barre] .sy-box {
+  background: var(--c-base); color: var(--c-onBase); align-items: center;
+  padding: calc(18 * var(--u)) calc(38 * var(--u)) calc(18 * var(--u)) calc(44 * var(--u));
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.gfx-synthe[data-style=barre] .sy-line { left: 0; top: 0; bottom: 0; width: calc(10 * var(--u)); border-radius: var(--radius) 0 0 var(--radius); }
+.gfx-synthe[data-style=barre] .sy-nametext { font-size: calc(48 * var(--u)); line-height: 1.08; }
+.gfx-synthe[data-style=barre] .sy-role { font-size: calc(26 * var(--u)); color: var(--c-onBase-72); margin-top: calc(2 * var(--u)); }
+.gfx-synthe[data-style=barre] .sy-tag { background: var(--sy-name); color: var(--sy-name-fg); margin-bottom: calc(8 * var(--u)); border-radius: var(--radius); }
+.gfx-synthe[data-style=barre] .sy-photo { width: calc(104 * var(--u)); height: calc(104 * var(--u)); margin-right: calc(26 * var(--u)); border-radius: var(--radius); }
+.gfx-synthe[data-style=barre] .sy-pos[data-anchor$=r] .sy-photo { margin: 0 0 0 calc(26 * var(--u)); }
+
+/* Carte: a light card, an accent line along its top, a photo on its left */
+.gfx-synthe[data-style=carte] .sy-box {
+  background: var(--sy-role); color: var(--sy-role-fg); align-items: stretch;
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.gfx-synthe[data-style=carte] .sy-line { left: 0; right: 0; top: 0; height: calc(6 * var(--u)); }
+.gfx-synthe[data-style=carte] .sy-photo { height: auto; min-height: calc(120 * var(--u)); width: calc(120 * var(--u)); }
+.gfx-synthe[data-style=carte] .sy-texts { padding: calc(24 * var(--u)) calc(36 * var(--u)) calc(20 * var(--u)); justify-content: center; }
+.gfx-synthe[data-style=carte] .sy-nametext { font-size: calc(46 * var(--u)); line-height: 1.08; }
+.gfx-synthe[data-style=carte] .sy-role { font-size: calc(24 * var(--u)); color: var(--c-onSurface-60); margin-top: calc(2 * var(--u)); }
+.gfx-synthe[data-style=carte] .sy-tag { background: var(--sy-name); color: var(--sy-name-fg); margin-bottom: calc(8 * var(--u)); border-radius: var(--radius); }
+
+/* Épuré: text alone over the picture, an accent underline between them */
+.gfx-synthe[data-style=epure] .sy-nametext {
+  font-size: calc(58 * var(--u)); line-height: 1.05; color: #fff;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.gfx-synthe[data-style=epure] .sy-line { position: relative; width: calc(120 * var(--u)); height: calc(5 * var(--u)); margin: calc(10 * var(--u)) 0 calc(8 * var(--u)); }
+.gfx-synthe[data-style=epure] .sy-role {
+  font-size: calc(28 * var(--u)); color: #fff; font-weight: var(--w-strong);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.gfx-synthe[data-style=epure] .sy-tag { background: var(--sy-name); color: var(--sy-name-fg); margin-bottom: calc(10 * var(--u)); border-radius: var(--radius); }

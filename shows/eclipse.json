@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "title": "Éclipse solaire · Thonac",
+  "timezone": "Europe/Paris",
+  "theme": { "preset": "direct" },
+  "motion": { "preset": "direct" },
+  "modules": {
+    "eclipse": {
+      "enabled": true,
+      "settings": {
+        "site": "Thonac (Dordogne)",
+        "lat": 48.8566,
+        "lon": 2.3522,
+        "alt": 35,
+        "search": "2026-08-01",
+        "graphic": "bandeau",
+        "demo": false,
+        "speed": 120
+      }
+    }
+  },
+  "variables": [],
+  "graphics": [
+    {
+      "id": "bandeau",
+      "type": "bandeau",
+      "name": "Bandeau de l'éclipse",
+      "fields": {
+        "band": {
+          "headline": "{{eclipse.headline}}",
+          "tag": "",
+          "timer": { "mode": "text", "label": "{{eclipse.timer_label}}", "value": "{{eclipse.countdown}}" }
+        },
+        "strap": {
+          "enabled": true,
+          "main": "{{eclipse.obsc}} du Soleil obscurci",
+          "second": "",
+          "accent": "{{eclipse.site}}",
+          "info": "{{eclipse.sunpos}}",
+          "badge": false
+        },
+        "ticker": { "enabled": true, "source": "var", "var": "eclipse.ticker", "rotate": 0, "clock": true, "clockText": "{{eclipse.clock}}" },
+        "timeline": { "enabled": true, "mode": "var", "progressVar": "eclipse.progress", "marksVar": "eclipse.marks" },
+        "panel": { "source": "module:eclipse.sky" },
+        "card": { "source": "module:eclipse.real", "width": 21 },
+        "column": { "sources": [] },
+        "layout": { "width": "full", "mx": 0, "my": 0 }
+      },
+      "motion": {}
+    }
+  ]
+}

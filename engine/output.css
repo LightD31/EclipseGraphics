@@ -1,0 +1,44 @@
+/* Output page base: the 1920×1080 stage, the theme's type roles, and what
+   every graphic shares. Sizes in lower thirds are written as
+   calc(N * var(--u)): N pixels at the theme's scale (and the graphic's own
+   size), so the whole package grows or shrinks together. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: transparent; overflow: hidden; }
+body {
+  width: 100vw; height: 100vh;
+  font-family: var(--f-text); font-weight: var(--w-text); font-stretch: var(--fs-text);
+  color: var(--c-onBase);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+#stage { position: fixed; inset: 0; overflow: hidden; }
+.gfx {
+  --u: calc(1px * var(--s, 1) * var(--gs, 1));
+  position: absolute; inset: 0; pointer-events: none;
+}
+[hidden] { display: none !important; }
+.gfx .head {
+  font-family: var(--f-head); font-weight: var(--w-head); font-stretch: var(--fs-head);
+  text-transform: var(--tt-head); letter-spacing: var(--ls-head);
+}
+.gfx .num {
+  font-family: var(--f-num); font-weight: var(--w-num); font-stretch: var(--fs-num);
+  font-variant-numeric: tabular-nums;
+}
+.gfx .strong { font-weight: var(--w-strong); }
+
+/* The "en direct" badge: a dot that breathes */
+.gfx-live { display: inline-flex; align-items: center; gap: 0.45em; font-weight: var(--w-strong); text-transform: uppercase; letter-spacing: 0.06em; }
+.gfx-live::before { content: ''; width: 0.62em; height: 0.62em; border-radius: 50%; background: currentColor; animation: gfxBlink 1.4s ease-in-out infinite; }
+.gfx-live.idle::before { animation: none; }
+@keyframes gfxBlink { 50% { opacity: 0.25; } }
+/* Blocks that appear with a layout (the fullscreen's corner card…) */
+@keyframes gfxAppear { from { opacity: 0; transform: translate3d(0, 14px, 0); } to { opacity: 1; transform: none; } }
+
+/* Morphs between layouts (View Transitions API): every named block tweens
+   from its old box to its new one; the duration comes from the motion
+   preset (output.js sets --vt-dur before each morph). */
+::view-transition-group(*) {
+  animation-duration: var(--vt-dur, 0.6s);
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--vt-dur, 0.6s); }

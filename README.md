@@ -1,7 +1,13 @@
 # EclipseGraphics
 
-Browser-source graphics for a live broadcast of the 12 August 2026 total solar eclipse
-in **Thonac, Dordogne** (`Europe/Paris`). Both widgets take `lat`/`lon`/`alt` query
+Browser-source graphics for live broadcasts, in one shared on-air look (red headline
+band, navy ticker, white strap):
+
+- the 12 August 2026 total solar eclipse in **Thonac, Dordogne** — see below;
+- the **first flight of the Airbus A350F** from Toulouse-Blagnac on 29 September 2026,
+  tracked live over ADS-B — see [`a350f-first-flight.html`](#a350f-first-flighthtml--premier-vol-de-lairbus-a350f).
+
+The eclipse widgets cover the eclipse over **Thonac, Dordogne** (`Europe/Paris`). Both widgets take `lat`/`lon`/`alt` query
 parameters for the observer location, defaulting to Paris (a public, non-identifying
 location) when omitted — pass the actual broadcast site's coordinates via the URL. Local
 circumstances (contact times, obscuration %, sun position) are computed with the
@@ -16,6 +22,8 @@ from `astronomy.browser.min.js`, with hardcoded fallback timings if the live com
 | `eclipse-widget-broadcast.html` | Full broadcast overlay (lower-third + fullscreen scene) with live obs-websocket control and Bitfocus Companion feedback. |
 | `astronomy.browser.min.js` | Shared Astronomy Engine library (MIT), loaded by both widgets via `<script src>`. |
 | `twitch-messages.md` | Ready-to-paste Twitch chat messages (French), built from the Companion custom variables below. |
+| `a350f-first-flight.html` | A350F first-flight overlay (lower third + fullscreen live map), same look and same OBS/Companion control scheme as the eclipse overlay. |
+| `a350f-relay.js` | Tiny local server the A350F overlay reads its live ADS-B data through, which also records the whole flight (Node 18+, no dependencies). |
 
 Both widgets are meant to be added as an OBS **Browser Source** (transparent background).
 Since `astronomy.browser.min.js` is now a separate file, keep it alongside the widget HTML
@@ -177,8 +185,166 @@ those variables — one per `eclipse_phase` value, plus an all-phases version an
 variants — for a Companion trigger that posts the eclipse's live state to chat every
 few minutes.
 
+## `a350f-first-flight.html` — Premier vol de l'Airbus A350F
+
+Live overlay for the maiden flight of the A350F (**F-WXLD**, MSN 700, 2 × Trent XWB-97),
+scheduled for **29 September 2026, ~10:30 local** from Toulouse-Blagnac. It reuses the
+eclipse overlay's design and choreography one for one:
+
+- **lower third** — a live map square that follows the aircraft, a white strap with
+  altitude, ground speed, vertical speed, heading and distance from Toulouse, the red
+  headline band with a timer (countdown to the scheduled take-off, then flight time, then
+  total flight time once it lands), and a ticker with the aircraft's facts before take-off
+  and the flight's milestones after it (take-off time, max altitude, max speed, distance
+  flown, landing time);
+- **fullscreen** — the whole canvas becomes the map with the track drawn in red, a
+  flight-data panel (altitude, ground speed, vertical speed, heading, distance, Mach/IAS)
+  under the red block, and a corner card with the **flight profile** (altitude and ground
+  speed over time). `main.profile` swaps the two, putting the profile on the canvas.
+
+The headline follows the flight by itself — *premier vol de l'Airbus A350F* → *l'A350F
+roule vers la piste* → *course au décollage* → *décollage !* → *en montée* / *essais en
+cours* / *en descente* → *retour vers Toulouse* → *en finale* → *premier vol réussi !*
+
+### Live data: ADS-B via adsb.lol / adsb.fi
+
+Position, altitude and speeds come from the aircraft's own ADS-B transponder, through
+the free community aggregators [adsb.lol](https://adsb.lol) (ODbL) and
+[adsb.fi](https://adsb.fi) (fallback) — both publish a free, key-less, ~1 request/s API
+in the standard readsb format. F-WXLD transmits as Mode S address **`39A53B`** (per the
+tar1090 aircraft database); the overlay also looks it up by registration every few polls,
+and follows whatever address that returns, in case the transponder is ever re-coded.
+Paid APIs (FlightAware, Flightradar24) would work too but need keys; OpenSky's API only
+allows browser calls from its own site.
+
+**Run the relay.** Neither API sends CORS headers, so a browser source can't read them
+directly. `a350f-relay.js` serves this folder and forwards the API calls from the same
+origin, sharing one upstream request between every source that asks, and switching to
+adsb.fi when adsb.lol errors or rate-limits. It also **records the flight** (below), so
+start it early — before the engines start, ideally — and leave it running:
+
+```
+node a350f-relay.js                 # → http://127.0.0.1:8787/a350f-first-flight.html
+node a350f-relay.js --port 9000 --host 0.0.0.0   # reachable from another machine
+```
+
+| Relay option | Description |
+|---|---|
+| `--port N` / `--host ADDR` | Where to listen (default `127.0.0.1:8787`). |
+| `--watch HEX[,HEX…]` | Aircraft to record from startup (default `39a53b`, F-WXLD; `none` for none). Any aircraft the page asks about is added. |
+| `--log DIR` | Where the recording goes (default `flight-log/` next to the relay, git-ignored). |
+
+Then add the browser source (1920×1080) as
+`http://127.0.0.1:8787/a350f-first-flight.html?obspw=…&companion=…`. A page opened as
+a local file can still use a running relay with `?relay=http://127.0.0.1:8787`.
+
+### Flight recording: the whole flight, whatever gets disconnected
+
+Every point the API returns is kept, with all its fields, so the flight can be rebuilt
+end to end after any interruption:
+
+- **The relay records by itself.** It polls the watched aircraft every 2 s (every 10 s
+  while it hasn't been seen for 10 minutes) whether or not a browser source is open, and
+  appends every new position to `flight-log/<hex>-<UTC date>.jsonl` — one JSON object
+  per line, the API's full aircraft object plus `_t` (when the position was measured,
+  epoch ms) and `_src` (which API gave it). The log is reloaded when the relay restarts.
+- **Holes are filled from adsb.lol's own track.** If the relay loses the APIs (network
+  down), is stopped for a while, or the aircraft goes out of receiver coverage, it
+  fetches adsb.lol's recorded trace of the aircraft (the one its map draws, a point every
+  ~10–20 s) once back, and merges it into the gap — keeping its own finer points wherever
+  it has them. It does the same at startup, so starting the relay late still recovers the
+  day's flight so far.
+- **The page catches up from the relay.** On load, after a reconnection and every
+  minute, the page fetches the relay's recording (`/adsb/history/<hex>`) and merges it
+  into its own, then replays the flight to re-derive take-off, landing, max altitude,
+  max speed and distance flown. A browser source refreshed mid-flight, or opened for the
+  first time after take-off, therefore shows the whole track and profile at once. The
+  page also keeps every point in its own local storage (per registration and day), so a
+  refresh doesn't lose anything even without the relay.
+
+Tested by killing the relay for 75 s mid-flight: once it was back, the page's track had no
+hole longer than 21 s across the outage. Take-off time is detected when the aircraft
+leaves the ground; if neither the page nor the relay saw that (both started after
+take-off, and the trace starts later), set it with `?takeoff=HH:MM`.
+
+| Relay route | Returns |
+|---|---|
+| `GET /adsb/history/<hex>` | The recording, oldest first: `{hex, now, boot, filled, count, points}`. `?since=<epoch ms>` for points measured from then on; `?raw` for the full API objects instead of the fields the page uses. |
+| `GET /flight-log/<file>.jsonl` | A day's log file as written (the folder is served like the rest). |
+
+### Query parameters
+
+| Param | Description |
+|---|---|
+| `?t0=HH:MM` | Scheduled take-off, local time (default `10:30`). |
+| `?date=YYYY-MM-DD` | Flight day (default `2026-09-29`) — for a postponed flight. |
+| `?dur=N` | Planned flight time in minutes (default `240`), for the progress line and the profile's time axis. |
+| `?takeoff=HH:MM[:SS]` | Actual take-off time, when the page missed it. |
+| `?reg=` / `?hex=` / `?callsign=` | Aircraft to track (default `F-WXLD` / `39a53b`; callsign optional). |
+| `?msn=N` | MSN shown on screen (default `700`). |
+| `?poll=N` | Seconds between API polls (default `2`, minimum `1`). |
+| `?relay=URL` | Relay to use when the page isn't served by it. |
+| `?reset` | Forget the page's stored track and times for this aircraft and day (the relay's recording, if any, is fetched again). |
+| `?demo` | Play a synthetic first flight instead of live data (taxi, take-off from 32L, a loop over the Atlantic and along the Pyrenees, landing back). |
+| `?speed=N` / `?from=N` | Demo speed multiplier (default `30`) / start point in minutes relative to the scheduled take-off (default `-8`; e.g. `from=60` to preview mid-flight). |
+| `?tiles=URL` | Basemap tile template (`{z}/{x}/{y}`, `{s}` → a–d, `{r}` → `@2x`), or `none`. Default: OpenStreetMap. |
+| `?tilestyle=invert\|tint\|raw` | How the tiles are recoloured to the navy: `invert` for light maps (default for OSM), `tint` for dark maps (default for `?tiles=`), `raw` for as-is. |
+| `?attrib=TEXT` | Map credit for a custom `?tiles=` provider. |
+| `?layout=full\|lower` · `?main=map\|profile` · `?card=on\|off` · `?map=track\|follow` | Starting state (see commands). |
+| `?obspw=` · `?obsport=` · `?companion=HOST[:PORT]` · `?noautoanim` | As for the eclipse overlay. |
+
+The default basemap is OpenStreetMap's own tile server, inverted into the broadcast
+navy. That is fine for one broadcast under the
+[tile usage policy](https://operations.osmfoundation.org/policies/tiles/) (credit shown
+on screen); for heavier or commercial use, point `?tiles=` at a keyed provider (MapTiler,
+Stadia, CARTO…). CARTO's formerly free basemaps now return "API key required" tiles.
+
+### Commands (`a350f` custom event)
+
+Same vocabulary and mechanics as the eclipse overlay, under its own event key, so both
+overlays can live in the same OBS and Companion: **OBS Studio → Broadcast Custom Event**
+with `{"a350f": "<command>"}`, or `window.a350fCommand('<command>')`.
+
+| Command | Effect |
+|---|---|
+| `air.on` / `air.off` / `air.toggle` | Slide on / off air. |
+| `air.on.full` / `air.on.lower` | Land on air in the named layout in one step. |
+| `layout.full` / `layout.lower` / `layout.toggle` | Fullscreen map ↔ lower third (morphs when on air). |
+| `main.map` / `main.profile` / `main.toggle` | Which view owns the fullscreen canvas: the map, or the flight profile. |
+| `card.on` / `card.off` / `card.toggle` | Corner card (whichever view is in it). |
+| `map.track` / `map.follow` / `map.toggle` | Fullscreen map framing: the whole track (default), or riding with the aircraft. |
+
+Preview keys: **R** card, **S** swap, **F** track/follow; click and double-click as for
+the eclipse overlay.
+
+### Companion variables (`a350f_*`)
+
+| Variable | Example | Description |
+|---|---|---|
+| `a350f_air` / `_layout` / `_main` / `_card` / `_map` | `on`, `full`, `map`, `on`, `track` | View state, one per command namespace. |
+| `a350f_phase` | `attente` \| `roulage` \| `course` \| `decollage` \| `montee` \| `palier` \| `descente` \| `approche` \| `finale` \| `atterri` | Flight phase. |
+| `a350f_signal` | `live` \| `stale` \| `none` | Whether ADS-B is current (stale after 30 s without a position). |
+| `a350f_source` | `adsb.lol`, `adsb.fi`, `erreur` | Where the data came from — `erreur` when no source answers (relay not running?). |
+| `a350f_timer` / `a350f_time` | `01:23:45` / `1 h 23` | The on-screen timer, and a coarse version that changes once a minute. |
+| `a350f_status` / `a350f_label` | `Premier vol, en montée` / `en vol depuis` | Headline and timer label in sentence case. |
+| `a350f_alt` / `_alt_m` | `24 500 ft` / `7 470 m` | Current altitude (`au sol` on the ground). |
+| `a350f_speed` / `_speed_kmh` / `_vs` / `_hdg` / `_dist` | `460 kt` / `852 km/h` / `+1 800 ft/min` / `245° OSO` / `85 km` | Live figures (distance from Toulouse-Blagnac). |
+| `a350f_t_sched` / `_t_takeoff` / `_t_landing` | `10:30` | Scheduled and actual times. |
+| `a350f_alt_max` / `_speed_max` / `_distance` | `31 000 ft` / `470 kt` / `1 250 km` | Flight records so far. |
+| `a350f_reg` / `a350f_callsign` | `F-WXLD` / `AIB01` | Registration, and the callsign the transponder reports. |
+
+For a periodic Twitch message, in the same spirit as [`twitch-messages.md`](twitch-messages.md):
+
+```
+✈️ Premier vol de l'Airbus A350F en direct de Toulouse · $(custom:a350f_status) · $(custom:a350f_alt), $(custom:a350f_speed) ($(custom:a350f_speed_kmh)) · $(custom:a350f_label) $(custom:a350f_time)
+```
+
 ## License
 
-Both widgets load the [Astronomy Engine](https://github.com/cosinekitty/astronomy)
+Both eclipse widgets load the [Astronomy Engine](https://github.com/cosinekitty/astronomy)
 JavaScript library, MIT-licensed, © 2019–2023 Don Cross, from `astronomy.browser.min.js`. See the
 license header inside that file.
+
+The A350F overlay displays third-party data, credited on screen: ADS-B data from
+[adsb.lol](https://adsb.lol) (ODbL) or [adsb.fi](https://adsb.fi) (personal,
+non-commercial use, with attribution), and map tiles © OpenStreetMap contributors (ODbL).

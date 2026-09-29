@@ -17,6 +17,14 @@
      GET /adsb/reg/<reg>         aircraft by registration
      GET /adsb/callsign/<cs>     aircraft by callsign
      GET /adsb/history/<icao24>  every point recorded for it (?since=<ms>, ?raw=1)
+     GET /wx/<ICAO>              the airport's latest METAR (aviationweather.gov),
+                                 cached 5 minutes
+     GET /status                 relay health, recording, the overlays' state
+                                 (for a350f-status.html, the operator's page)
+     POST /state                 an overlay reporting its state; the answer
+                                 carries the commands queued since its last call
+     POST /command               queue a command for every overlay (the status
+                                 page's route when OBS's websocket isn't there)
      GET /<file>                 static files from this folder
 
    The /adsb answers are the upstream's own readsb JSON ({"ac":[…]}) plus
@@ -71,7 +79,7 @@ const UPSTREAMS = [
       callsign: v => 'https://opendata.adsb.fi/api/v2/callsign/' + v,
     },
   },
-].map(u => Object.assign(u, { last: 0, failUntil: 0 }));
+].map(u => Object.assign(u, { last: 0, failUntil: 0, requests: 0, errors: 0, lastOk: 0, lastErr: null }));
 /* adsb.lol's tar1090 traces: the whole day, and the last ~25 minutes */
 const TRACE_URL = (hex, kind) =>
   'https://globe.adsb.lol/data/traces/' + hex.slice(-2) + '/trace_' + kind + '_' + hex + '.json';
@@ -92,7 +100,19 @@ const IDLE_WATCH_MS = 10000; /* watcher poll otherwise */
 const GAP_MS = 60000;       /* a hole this long in the recording triggers a backfill */
 const TRACE_NEAR_MS = 8000; /* trace points closer than this to a recorded one are redundant */
 
+/* The last lines logged, for the status page */
+const logRing = [];
+['log', 'warn'].forEach(level => {
+  const orig = console[level].bind(console);
+  console[level] = (...a) => {
+    logRing.push({ at: Date.now(), level, text: a.join(' ') });
+    if (logRing.length > 60) logRing.shift();
+    orig(...a);
+  };
+});
+
 const cache = new Map();    /* "kind/value" -> { at, body } */
+const wxCache = new Map();  /* ICAO -> { at, body } */
 const BOOT = Date.now();    /* with filled: lets a page tell that the past changed */
 let filled = 0;             /* points put into holes (trace backfills) since start */
 const inflight = new Map(); /* "kind/value" -> Promise<{ at, body }> */
@@ -104,14 +124,18 @@ async function fetchUpstream(kind, value) {
     if (t < up.failUntil) { errors.push(up.name + ': backing off'); continue; }
     if (t - up.last < MIN_INTERVAL) { errors.push(up.name + ': rate limit'); continue; }
     up.last = t;
+    up.requests++;
     try {
       const res = await fetch(up.url[kind](value), { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
       json.src = up.name;
+      up.lastOk = Date.now();
       return json;
     } catch (e) {
       up.failUntil = Date.now() + BACKOFF_MS;
+      up.errors++;
+      up.lastErr = { at: Date.now(), msg: e.message };
       errors.push(up.name + ': ' + e.message);
       console.warn(new Date().toISOString(), up.name, kind, value, e.message);
     }
@@ -138,6 +162,25 @@ async function adsb(kind, value, maxAge) {
   }).finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
+}
+
+// ===== Weather: the airport's METAR, for the page's waiting-time ticker =====
+async function metar(icao) {
+  const hit = wxCache.get(icao);
+  if (hit && Date.now() - hit.at < 300000) return hit.body;
+  try {
+    const res = await fetch('https://aviationweather.gov/api/data/metar?ids=' + icao + '&format=json',
+                            { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const list = await res.json();
+    const body = { icao, metar: Array.isArray(list) && list[0] || null, fetched: Date.now() };
+    wxCache.set(icao, { at: Date.now(), body });
+    return body;
+  } catch (e) {
+    console.warn(new Date().toISOString(), 'metar', icao, e.message);
+    if (hit) return hit.body; // an older report beats none
+    throw e;
+  }
 }
 
 // ===== Flight recorder =====
@@ -298,6 +341,34 @@ setInterval(() => {
   }
 }, 60000);
 
+// ===== Operator page: overlay states, command queue, status =====
+const overlays = new Map(); /* overlay id -> { at, state } */
+const commands = [];        /* { seq, at, cmd, text } */
+let cmdSeq = 0;
+function readBody(req, max) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const parts = [];
+    req.on('data', c => { size += c.length; if (size > max) { reject(new Error('too large')); req.destroy(); } else parts.push(c); });
+    req.on('end', () => resolve(Buffer.concat(parts).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+function status() {
+  const t = Date.now();
+  for (const [id, o] of overlays) if (t - o.at > 60000) overlays.delete(id);
+  return {
+    now: t, boot: BOOT, filled, log: logRing.slice(-40),
+    upstreams: UPSTREAMS.map(u => ({ name: u.name, requests: u.requests, errors: u.errors, lastOk: u.lastOk,
+                                     lastErr: u.lastErr, backoff: u.failUntil > t ? u.failUntil - t : 0 })),
+    watched: [...watched.entries()].map(([hex, w]) => {
+      const f = flight(hex), last = f.pts[f.pts.length - 1];
+      return { hex, points: f.pts.length, newest: last ? last._t : null, lastBackfill: w.lastBackfill, failSince: w.failSince };
+    }),
+    overlays: [...overlays.entries()].map(([id, o]) => Object.assign({ id, age: t - o.at }, o.state)),
+    commands: commands.slice(-10),
+  };
+}
+
 const HIST_FIELDS = ['_t', 'lat', 'lon', 'alt_baro', 'alt_geom', 'gs', 'track', 'true_heading', 'baro_rate',
                      'geom_rate', 'flight', 'squawk', 'mach', 'ias', 'oat', '_src'];
 function history(hex, since, raw) {
@@ -367,10 +438,31 @@ process.on('SIGTERM', shutdown);
 
 http.createServer((req, res) => {
   if (req.method === 'OPTIONS') {
-    return send(res, 204, { 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': '*' }, '');
+    return send(res, 204, { 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type' }, '');
+  }
+  const url = new URL(req.url, 'http://relay');
+  if (req.method === 'POST' && (url.pathname === '/state' || url.pathname === '/command')) {
+    readBody(req, 16384).then(raw => {
+      const body = JSON.parse(raw || '{}');
+      if (url.pathname === '/state') {
+        if (typeof body.id !== 'string' || body.id.length > 40) throw new Error('bad id');
+        overlays.set(body.id, { at: Date.now(), state: body.state || {} });
+        // a first call only learns where the queue is: nothing old is replayed
+        const since = typeof body.since === 'number' ? body.since : cmdSeq;
+        return send(res, 200, JSON_TYPE, JSON.stringify({ seq: cmdSeq,
+          commands: commands.filter(c => c.seq > since && Date.now() - c.at < 30000) }));
+      }
+      const cmd = String(body.cmd || '').trim();
+      if (!/^[a-z0-9]+(\.[^\n]{1,120})?$/i.test(cmd)) throw new Error('bad command');
+      commands.push({ seq: ++cmdSeq, at: Date.now(), cmd, text: body.text ? String(body.text).slice(0, 120) : undefined });
+      if (commands.length > 50) commands.shift();
+      console.log(new Date().toISOString(), 'command', cmd + (body.text ? ' "' + body.text + '"' : ''));
+      send(res, 200, JSON_TYPE, JSON.stringify({ ok: true, seq: cmdSeq }));
+    }).catch(e => send(res, 400, JSON_TYPE, JSON.stringify({ error: e.message })));
+    return;
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, {}, 'method not allowed');
-  const url = new URL(req.url, 'http://relay');
+  if (url.pathname === '/status') return send(res, 200, JSON_TYPE, JSON.stringify(status()));
   const h = url.pathname.match(/^\/adsb\/history\/([^/]+)$/);
   if (h) {
     const hex = decodeURIComponent(h[1]).toLowerCase();
@@ -378,6 +470,12 @@ http.createServer((req, res) => {
     watch(hex);
     const points = history(hex, +url.searchParams.get('since') || 0, url.searchParams.has('raw'));
     return send(res, 200, JSON_TYPE, JSON.stringify({ hex, now: Date.now(), boot: BOOT, filled, count: points.length, points }));
+  }
+  const w = url.pathname.match(/^\/wx\/([A-Za-z]{4})$/);
+  if (w) {
+    metar(w[1].toUpperCase()).then(body => send(res, 200, JSON_TYPE, JSON.stringify(body)),
+                                   err => send(res, 502, JSON_TYPE, JSON.stringify({ error: err.message })));
+    return;
   }
   const m = url.pathname.match(/^\/adsb\/(hex|reg|callsign)\/([^/]+)$/);
   if (m) {

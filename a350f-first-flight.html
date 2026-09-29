@@ -170,6 +170,8 @@
   }
   #mapcap .leg i { display: inline-block; width: 40px; height: 6px; background: var(--red); box-shadow: 0 0 0 1.5px rgba(255,255,255,0.35); }
   #mapcap .leg i.lp { width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px var(--red); margin-left: 18px; }
+  #capwhere { margin-top: 12px; font-size: 21px; font-weight: 700; }
+  #capwhere:empty { display: none; }
   /* Card header, mirroring the flight-profile card's; only shown once swapped */
   #maphead {
     display: none; position: absolute; left: 0; right: 0; top: 0; z-index: 3;
@@ -215,7 +217,7 @@
   @keyframes kFlashIn  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
   @keyframes kFlashOut { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 0 100%); } }
   #bar:not(.on) #flash { display: none; }
-  #bar.fs #flash { left: 90px; top: 150px; bottom: auto; height: 66px; }
+  #bar.fs #flash { left: 90px; top: 196px; bottom: auto; height: 66px; }
   #bar.fs #flash .ftag { font-size: 21px; padding: 0 22px; }
   #bar.fs #flash .ftitle { font-size: 34px; }
   #bar.fs #flash .fsub { font-size: 22px; }
@@ -480,6 +482,7 @@
       <div id="mapcap" aria-hidden="true">
         <b>TRAJECTOIRE EN DIRECT · <span id="capday">–</span></b>
         <div class="leg"><i></i>TRACE ADS-B<i class="lp"></i><span id="capreg">F-WXLD</span></div>
+        <div id="capwhere"></div>
       </div>
       <div id="maphead" aria-hidden="true"><b>TRAJECTOIRE</b><span id="mapsub">–</span></div>
       <div id="attrib"></div>
@@ -719,6 +722,7 @@
   connectOBS();
 })();
 </script>
+<script src="a350f-places.js"></script>
 <script>
 /* Premier vol de l'Airbus A350F · Toulouse-Blagnac · 29 septembre 2026
    Live position from ADS-B (adsb.lol, adsb.fi), through a350f-relay.js. */
@@ -1010,6 +1014,11 @@
       }
       return;
     }
+    if (!st.oceanSeen && window.A350F_WHERE && A350F_WHERE.sea(p.lat, p.lon)) {
+      st.oceanSeen = true;
+      var w = A350F_WHERE(p.lat, p.lon);
+      addEvent('ocean', p.t, { sea: A350F_WHERE.sea(p.lat, p.lon), text: w ? w.text : '' });
+    }
     if (p.a == null) return;
     if (!st.fl100 && prev && prev.a != null && prev.a < 10000 && p.a >= 10000 && p.v > 0) {
       st.fl100 = true;
@@ -1093,7 +1102,7 @@
     st.altMax = 0; st.gsMax = 0; st.dist = 0;
     st.events = []; st.appr = null; st.reair = 0; st.armed = false;
     st.fl100 = false; st.lvl = null; st.lastLvl = 0; st.machTh = 0; st.machMax = 0;
-    st.desc = null; st.descSeen = false; st.landSeen = false; st.landingAt = null;
+    st.desc = null; st.descSeen = false; st.landSeen = false; st.landingAt = null; st.oceanSeen = false;
     for (var i = 0; i < st.samples.length; i++) step(st.samples[i - 1], st.samples[i]);
   }
 
@@ -1420,7 +1429,7 @@
   // ===== Text: headline, timer, strap, flight-data panel, ticker =====
   var el = {};
   ['status', 'cdlabel', 'countdown', 'clock', 'progressFill', 'sAlt', 'sSpd', 'sReg', 'sInfo', 'sId', 'live',
-   'tagalt', 'capday', 'capreg', 'mapsub', 'profsub', 'attrib', 'tk6'].forEach(function (id) { el[id] = $(id); });
+   'tagalt', 'capday', 'capreg', 'capwhere', 'mapsub', 'profsub', 'attrib', 'tk6'].forEach(function (id) { el[id] = $(id); });
   var textCache = {};
   function setText(node, s) {
     if (!node || textCache[node.id] === s) return;
@@ -1479,6 +1488,9 @@
         c = ['Toulouse', 'Remise des gaz', 'au plus bas à ' + ft(v.agl) + ' ft du sol']; break;
       case 'touchgo':
         c = ['Toulouse', 'Toucher et remise des gaz', rwy]; break;
+      case 'ocean':
+        c = v.sea === 'mediterranee' ? ['Méditerranée', 'L\'A350F survole la Méditerranée', v.text]
+                                     : ['Atlantique', 'L\'A350F survole l\'océan Atlantique', v.text]; break;
       case 'atterrissage':
         var to = takeoffTime();
         c = ['Atterrissage', 'Atterrissage à ' + fmtTS(ev.t), (to ? fmtCoarse(ev.t - to) + ' de vol · ' : '') + rwy]; break;
@@ -1506,6 +1518,17 @@
       fb('event_text', c.title + (c.sub ? ' (' + c.sub + ')' : ''));
       fb('event_n', String(++flashN));
     }
+  }
+
+  // Position in words (a350f-places.js), refreshed every 5 s at most
+  var where = { at: 0, text: '' };
+  function whereNow() {
+    if (!live || !window.A350F_WHERE) return '';
+    if (Date.now() - where.at > 5000) {
+      var w = window.A350F_WHERE(live.lat, live.lon);
+      where = { at: Date.now(), text: w ? w.text : '' };
+    }
+    return where.text;
   }
 
   function updateText() {
@@ -1558,10 +1581,13 @@
       sAlt = ft(live.alt) + ' ft';
       sSpd = Math.round(live.gs) + ' kt';
       sInfo = (live.vs > 300 ? '▲ ' : live.vs < -300 ? '▼ ' : '') + vsTxt(live.vs) + ' ft/min · cap ' +
-              hdg(live.trk) + ' ' + compass(live.trk) + ' · ' + nf.format(d) + ' km de Toulouse';
+              hdg(live.trk) + ' · ' + (whereNow() || nf.format(d) + ' km de Toulouse');
     }
     setText(el.sAlt, sAlt); setText(el.sSpd, sSpd); setText(el.sInfo, sInfo);
     setText(el.tagalt, !live ? 'F-WXLD' : live.gnd ? 'AU SOL' : 'FL' + pad(Math.round(live.alt / 100)).padStart(3, '0'));
+    var wtext = live && !live.gnd ? whereNow() : '';
+    setText(el.capwhere, wtext ? wtext.charAt(0).toUpperCase() + wtext.slice(1) : '');
+    fb('where', live ? whereNow() : '');
 
     if (!live) {
       for (var i = 1; i <= 6; i++) { setVal(i, '–', ''); setText($('ts' + i), '–'); }

@@ -743,6 +743,10 @@
     Object.keys(M.PRESETS).forEach(function (k) {
       var P = M.PRESETS[k];
       grid.appendChild(h('button', { class: 'preset' + ((mo.preset || 'direct') === k ? ' on' : ''), onclick: function () {
+        if (mo.roles && (mo.preset || 'direct') !== k) {
+          if (!confirm('Changer de style efface vos réglages élément par élément. Continuer ?')) return;
+          delete mo.roles;
+        }
         mo.preset = k; changed(); renderTab();
         setTimeout(function () { if (S.sel) try { pv.contentWindow.postMessage({ gfxReplay: S.sel }, location.origin); } catch (e) { /* ignore */ } }, 400);
       } }, [h('b', { text: P.label }), h('small', { text: P.desc })]));
@@ -763,21 +767,71 @@
       get: function (k) { return mo[k]; }, set: function (k, v) { mo[k] = v; }, values: function () { return mo; }
     }, formEnv(null));
     el.appendChild(h('div', { class: 'bar' }, [h('button', { text: '▶ Rejouer l\'entrée du graphique sélectionné', onclick: function () { $('bReplay').click(); } })]));
-    // what each preset does
+    // each part of the graphics: the style's timing, or the project's own
+    // (motion.roles, over the style — engine/motion.js)
     var P = M.PRESETS[mo.preset || 'direct'];
-    if (P.in && Object.keys(P.in).length) {
-      var tb = h('table', { class: 't' }, [h('tr', {}, ['Élément', 'Entrée', 'Sortie'].map(function (x) { return h('th', { text: x }); }))]);
-      var names = { banner: 'flash', bandA: 'bande d\'accent (titre)', bandB: 'bande de fond (défilant)', surface: 'bande claire', panel: 'panneau / photo',
-                    visual: 'logo, repère', title: 'titre', text: 'texte secondaire', items: 'éléments de liste', figure: 'minuteur', clock: 'horloge',
-                    line: 'ligne, filet', tag: 'étiquette', badge: 'pastille', sheen: 'reflet', bg: 'fond plein écran', block: 'bloc secondaire' };
-      M.ROLES.forEach(function (r) {
-        var a = P.in[r], b = P.out[r];
-        if (!a) return;
-        var d = function (x) { return x ? (M.LABELS[x[0]] || x[0]) + ' · ' + x[2].toFixed(2).replace('.', ',') + ' s' + (x[1] ? ' après ' + x[1].toFixed(2).replace('.', ',') + ' s' : '') : '—'; };
-        tb.appendChild(h('tr', {}, [h('td', { text: names[r] || r }), h('td', { text: d(a) }), h('td', { text: d(b) })]));
-      });
-      el.appendChild(h('details', { class: 'fm-sec' }, [h('summary', { text: 'Détail du style « ' + P.label + ' »' }), h('div', { class: 'fm-sec-body' }, [tb])]));
+    var names = { banner: 'flash', bandA: 'bande d\'accent (titre)', bandB: 'bande de fond (défilant)', surface: 'bande claire', panel: 'panneau / photo',
+                  visual: 'logo, repère', title: 'titre', text: 'texte secondaire', items: 'éléments de liste', figure: 'minuteur', clock: 'horloge',
+                  line: 'ligne, filet', tag: 'étiquette', badge: 'pastille', sheen: 'reflet', bg: 'fond plein écran', block: 'bloc secondaire' };
+    var fxs = Object.keys(M.FX).map(function (k) { return [k, M.LABELS[k] || k]; });
+    var eases = [['out', 'freine (maison)'], ['expo', 'freine fort'], ['soft', 'douce'], ['back', 'dépasse et revient'], ['snap', 'nette'],
+                 ['easeOut', 'ralentit'], ['in', 'accélère'], ['easeIn', 'accélère (doux)'], ['linear', 'régulière']];
+    function tidy() {
+      var R = mo.roles || {};
+      ['in', 'out'].forEach(function (d) { if (R[d] && !Object.keys(R[d]).length) delete R[d]; });
+      if (!R.in && !R.out) delete mo.roles;
     }
+    function timing(dir, r) {
+      var base = (P[dir] && P[dir][r]) || P.all || (dir === 'in' ? ['fade', 0.1, 0.35, 'out'] : ['fade', 0, 0.25, 'easeIn']);
+      var own = mo.roles && mo.roles[dir] && mo.roles[dir][r];
+      return { base: base, cur: own || base };
+    }
+    function choice(list, value) {
+      var e = h('select');
+      list.forEach(function (o) { e.appendChild(h('option', { value: o[0], text: o[1] })); });
+      e.value = value;
+      return e;
+    }
+    function num(v, title) { return h('input', { type: 'number', min: 0, max: 5, step: 0.05, value: String(+(+v).toFixed(3)), title: title }); }
+    var tb = h('table', { class: 't mo-t' }, [h('tr', {}, ['Élément', 'Entrée : effet · départ · durée (s) · courbe', 'Sortie', ''].map(function (x) { return h('th', { text: x }); }))]);
+    var mods = 0;
+    M.ROLES.forEach(function (r) {
+      var row = h('tr');
+      var reset = h('button', { class: 'fm-mini', text: '↺', title: 'Revenir au style « ' + P.label + ' »', onclick: function () {
+        ['in', 'out'].forEach(function (d) { if (mo.roles && mo.roles[d]) delete mo.roles[d][r]; });
+        tidy(); changed(); renderTab();
+      } });
+      function mark() {
+        var own = !!(mo.roles && ((mo.roles.in && mo.roles.in[r]) || (mo.roles.out && mo.roles.out[r])));
+        row.classList.toggle('mod', own);
+        reset.style.visibility = own ? 'visible' : 'hidden';
+        return own;
+      }
+      row.appendChild(h('td', { text: names[r] || r }));
+      ['in', 'out'].forEach(function (dir) {
+        var t = timing(dir, r);
+        var fx = choice(fxs, t.cur[0]), st = num(t.cur[1], 'départ (s)'), du = num(t.cur[2], 'durée (s)'), ea = choice(eases, t.cur[3] || 'out');
+        var commit = function () {
+          var v = [fx.value, Math.max(0, +st.value || 0), Math.max(0.01, +du.value || 0.01), ea.value];
+          if (t.base[4] != null) v.push(t.base[4]);
+          var R = mo.roles = mo.roles || {};
+          R[dir] = R[dir] || {};
+          if (JSON.stringify(v) === JSON.stringify(t.base.slice(0, v.length).map(function (x, i) { return i === 3 ? x || 'out' : x; }))) delete R[dir][r];
+          else R[dir][r] = v;
+          tidy(); changed(); mark();
+        };
+        [fx, st, du, ea].forEach(function (x) { x.addEventListener('change', commit); });
+        row.appendChild(h('td', {}, [fx, st, du, ea]));
+      });
+      row.appendChild(h('td', {}, [reset]));
+      if (mark()) mods++;
+      tb.appendChild(row);
+    });
+    el.appendChild(h('details', { class: 'fm-sec', open: mods > 0 }, [h('summary', { text: 'Élément par élément' + (mods ? ' (' + mods + ' personnalisé' + (mods > 1 ? 's' : '') + ')' : '') }),
+      h('div', { class: 'fm-sec-body' }, [
+        h('p', { class: 'note', text: 'Ce que fait le style « ' + P.label + ' » à chaque partie des graphiques, à l\'entrée et à la sortie. Modifiez une valeur : ' +
+          'elle s\'ajoute au style pour tout le projet (un graphique qui choisit un autre style garde le sien). ↺ revient au style.' }),
+        h('div', { class: 'mo-wrap' }, [tb])])]));
   }
 
   // ===== Variables =====

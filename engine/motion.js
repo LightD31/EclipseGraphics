@@ -196,11 +196,16 @@
   var ROLES = ['banner', 'bandA', 'bandB', 'surface', 'panel', 'visual', 'title', 'text', 'items', 'figure', 'clock', 'line',
                'tag', 'badge', 'sheen', 'bg', 'block'];
 
-  /* show.motion + a graphic's motion → { preset, speed, stagger, morph, change } */
+  /* show.motion + a graphic's motion → { preset, speed, stagger, morph, change }.
+     show.motion.roles = { in: { title: [effect, start, duration, easing,
+     stagger] }, out: {…} }: the show's own timing for some parts (the
+     panel's Animations tab), over its preset — not over another preset a
+     graphic picked for itself. */
   function config(showMotion, own) {
     var s = showMotion || {}, g = own || {};
     var name = g.preset || s.preset || 'direct';
     var P = PRESETS[name] || PRESETS.direct;
+    if (s.roles && (!g.preset || g.preset === (s.preset || 'direct'))) P = withRoles(P, s.roles);
     var speed = +g.speed || +s.speed || 1;
     return {
       preset: name, P: P, speed: Math.max(0.25, Math.min(4, speed)),
@@ -209,10 +214,22 @@
       change: g.change || s.change || 'fade'
     };
   }
+  function validSpec(a) {
+    return Array.isArray(a) && FX[a[0]] && isFinite(a[1]) && a[1] >= 0 && isFinite(a[2]) && a[2] > 0 &&
+      (a[3] == null || typeof a[3] === 'string') ? a : null;
+  }
+  function withRoles(P, roles) {
+    var out = { label: P.label, morph: P.morph, all: P.all, in: Object.assign({}, P.in), out: Object.assign({}, P.out) };
+    ['in', 'out'].forEach(function (dir) {
+      var o = (roles && roles[dir]) || {};
+      for (var r in o) if (validSpec(o[r])) out[dir][r] = o[r];
+    });
+    return out;
+  }
+  /* A part's timing: its own, else the preset's catch-all ("Coupe"), else a fade */
   function spec(cfg, dir, role) {
     var P = cfg.P;
-    if (P.all) return P.all;
-    return (P[dir] && P[dir][role]) || (dir === 'in' ? ['fade', 0.1, 0.35, 'out'] : ['fade', 0, 0.25, 'easeIn']);
+    return (P[dir] && P[dir][role]) || P.all || (dir === 'in' ? ['fade', 0.1, 0.35, 'out'] : ['fade', 0, 0.25, 'easeIn']);
   }
   function frames(name, dir) {
     var f = FX[name] || FX.fade;
@@ -284,5 +301,5 @@
   }
 
   window.GFXMotion = { EASE: EASE, FX: FX, LABELS: LABELS, PRESETS: PRESETS, ROLES: ROLES,
-                       config: config, play: play, change: change, spec: spec };
+                       config: config, play: play, change: change, spec: spec, withRoles: withRoles };
 })();

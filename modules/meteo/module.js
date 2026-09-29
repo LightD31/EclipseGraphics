@@ -61,7 +61,8 @@
         { key: 'every', type: 'number', label: 'Mise à jour toutes les', default: 15, min: 5, max: 180, unit: 'min' },
         { key: 'api', type: 'text', label: 'Adresse du service', default: '', placeholder: 'https://api.open-meteo.com',
           help: 'vide : le service gratuit ; ou une offre payante (customer-api.open-meteo.com), ou votre propre serveur Open-Meteo' },
-        { key: 'apikey', type: 'text', label: 'Clé d\'API', default: '', placeholder: 'offre payante seulement' }
+        { key: 'apikey', type: 'text', label: 'Clé d\'API', default: '', placeholder: 'offre payante seulement',
+          help: 'enregistrée dans le fichier du projet (versionné) : préférez la variable d\'environnement OPEN_METEO_APIKEY' }
       ] }
     ],
     vars: [

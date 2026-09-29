@@ -22,7 +22,9 @@ exports.init = function (ctx) {
       temperature_unit: s.temp === 'fahrenheit' ? 'fahrenheit' : 'celsius',
       wind_speed_unit: ['kmh', 'ms', 'kn', 'mph'].includes(s.wind) ? s.wind : 'kmh'
     });
-    if (s.apikey) q.set('apikey', String(s.apikey));
+    /* a paid plan's key: the settings', else the environment's (kept out of the show's file) */
+    const key = String(s.apikey || process.env.OPEN_METEO_APIKEY || '').trim();
+    if (key) q.set('apikey', key);
     return base(s) + '/v1/forecast?' + q;
   }
 

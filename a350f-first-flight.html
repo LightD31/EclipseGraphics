@@ -863,11 +863,13 @@
   // load, after a reconnection and every minute — so a gap on this side, or
   // a page opened for the first time mid-flight, still gets the whole flight.
   var STORE = 'a350f:' + (DEMO ? 'demo' : REG + ':' + DAY);
-  var st = { samples: [], takeoff: null, landing: null, airSeen: false, altMax: 0, gsMax: 0, dist: 0, hex: HEX };
+  var st = { samples: [], takeoff: null, landing: null, airSeen: false, altMax: 0, gsMax: 0, dist: 0, hex: HEX,
+             events: [] };
   try {
     if (DEMO || params.has('reset')) localStorage.removeItem(STORE);
     var saved = JSON.parse(localStorage.getItem(STORE) || 'null');
     if (saved && saved.samples) st = saved;
+    st.events = st.events || [];
     if (st.hex && !params.get('hex')) HEX = st.hex;
   } catch (e) { /* storage unavailable: start fresh */ }
   var saveAt = 0;
@@ -917,22 +919,65 @@
     trackDirty = true;
     return lo === S.length - 1 ? 'append' : 'insert';
   }
+  // Distance (km) from a point to the nearest LFBO runway centreline
+  function runwayKm(lat, lon) {
+    var kx = 111.32 * Math.cos(lat * RAD), ky = 110.57, best = Infinity;
+    RUNWAYS.forEach(function (r) {
+      var ax = (r[1] - lon) * kx, ay = (r[0] - lat) * ky, bx = (r[3] - lon) * kx, by = (r[2] - lat) * ky;
+      var dx = bx - ax, dy = by - ay, u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy)));
+      best = Math.min(best, Math.hypot(ax + u * dx, ay + u * dy));
+    });
+    return best;
+  }
+  /* Notable moments, derived from the samples like everything else in st —
+     so a replay after a hole is filled finds the same ones, with the same
+     ids, and nothing is announced twice. */
+  // t: when it happened; at: the sample that revealed it (a go-around is
+  // only known once the aircraft has climbed away)
+  function addEvent(type, t, v, at) {
+    var id = type + '@' + t;
+    for (var i = st.events.length - 1; i >= 0; i--) if (st.events[i].id === id) return;
+    st.events.push({ id: id, type: type, t: t, at: at || t, v: v || null });
+  }
   /* Take-off, landing and the records, from a sample and the one before it.
      Take-off, on the first airborne sample only: seen leaving the ground →
      between the two; picked up already climbing → back-computed from the
      height gained; picked up high (joined mid-flight) → left unknown, unless
      ?takeoff= says. */
   function step(prev, p) {
-    var gnd = p.g === 1;
+    var gnd = p.g === 1, agl = p.a == null ? null : p.a - HOME.elev;
     if (!gnd && !st.takeoff && !st.airSeen) {
-      var agl = (p.a == null ? HOME.elev : p.a) - HOME.elev;
+      var agl0 = agl == null ? 0 : agl;
       if (prev && prev.g && p.t - prev.t < 60000) st.takeoff = Math.round((prev.t + p.t) / 2);
-      else if (agl < 3000 && p.v > 300) st.takeoff = Math.round(p.t - agl / p.v * 60000);
-      else if (agl < 400) st.takeoff = p.t;
+      else if (agl0 < 3000 && p.v > 300) st.takeoff = Math.round(p.t - agl0 / p.v * 60000);
+      else if (agl0 < 400) st.takeoff = p.t;
     }
     if (!gnd) st.airSeen = true;
-    if (!gnd && st.landing && p.t - st.landing > 60000) st.landing = null; // off again
+    // Back in the air after a touchdown (two airborne samples in a row, so a
+    // bounce of the air/ground flag isn't one): the landing didn't end the
+    // flight. Within two minutes, that was a touch-and-go.
+    if (st.landing && !gnd) {
+      st.reair = (st.reair || 0) + 1;
+      if (st.reair >= 2) {
+        if (p.t - st.landing < 120000) addEvent('touchgo', st.landing, null, p.t);
+        st.landing = null;
+      }
+    } else st.reair = 0;
     if (gnd && st.airSeen && !st.landing) st.landing = p.t;
+    // Low over a runway and then climbing away without touching down: a low
+    // pass (lowest point under 300 ft) or a go-around. Armed only once the
+    // aircraft has been above 1 500 ft since it last touched the ground, so
+    // the climb-out after a take-off or a touch-and-go isn't one.
+    if (gnd) { st.appr = null; st.armed = false; }
+    else if (agl != null) {
+      if (agl > 1500) st.armed = true;
+      if (st.armed && agl < 1000 && runwayKm(p.lat, p.lon) < 5) {
+        if (!st.appr || agl < st.appr.min) st.appr = { min: agl, t: p.t };
+      } else if (st.appr && agl > Math.max(700, st.appr.min + 500) && p.v > 800) {
+        addEvent(st.appr.min < 300 ? 'passage' : 'remise', st.appr.t, { agl: Math.round(st.appr.min) }, p.t);
+        st.appr = null;
+      }
+    }
     if (!gnd) {
       st.altMax = Math.max(st.altMax, p.a || 0);
       st.gsMax = Math.max(st.gsMax, p.s);
@@ -943,9 +988,24 @@
   function recompute() {
     st.takeoff = null; st.landing = null; st.airSeen = false;
     st.altMax = 0; st.gsMax = 0; st.dist = 0;
+    st.events = []; st.appr = null; st.reair = 0; st.armed = false;
     for (var i = 0; i < st.samples.length; i++) step(st.samples[i - 1], st.samples[i]);
   }
 
+  /* Emergency squawks (7500 hijack, 7600 radio failure, 7700 emergency) or
+     an emergency status: nothing alarming goes on air by itself — that is an
+     editorial call — but the wording turns neutral (no "premier vol réussi"
+     until the operator says mode.auto) and Companion gets a350f_alert. */
+  var alertCode = '';
+  function checkAlert(a) {
+    var code = /^7[567]00$/.test(a.squawk || '') ? a.squawk
+             : a.emergency && a.emergency !== 'none' ? String(a.emergency) : '';
+    if (code && code !== alertCode && ctl.mode !== 'neutral') {
+      ctl.mode = 'neutral';
+      saveCtl();
+    }
+    alertCode = code;
+  }
   /* One report → state. t: when the position was measured (epoch ms, the
      data's own clock); age: how long ago that was, as best this page can
      tell. batch: part of a history merge, whose caller replays the flight
@@ -970,6 +1030,7 @@
       };
       st.hex = live.hex;
       if (!prev || prev.t !== p.t) newReport();
+      checkAlert(a);
     }
     if (how) {
       var before = st.samples[st.samples.length - 2];
@@ -1128,6 +1189,16 @@
       [43.35000, 1.62000, 7500, 260, 0],
       [43.47000, 1.58000, 4500, 210, 0],
       [43.54730, 1.44680, 2200, 160, 0],
+      // low pass down 32L at ~100 ft, climb out, right-hand circuit, land
+      [43.61900, 1.37210, 620, 150, 0],
+      [43.63740, 1.35300, 600, 155, 0],
+      [43.65500, 1.33500, 1500, 180, 0],
+      [43.68500, 1.30300, 3000, 210, 0],
+      [43.70000, 1.36000, 3000, 210, 0],
+      [43.66000, 1.45000, 3000, 210, 0],
+      [43.56000, 1.52000, 2800, 200, 0],
+      [43.52000, 1.47500, 2500, 180, 0],
+      [43.54730, 1.44680, 2200, 160, 0],
       [43.61900, 1.37210, 550, 140, 0],
       [43.62250, 1.36850, 499, 135, 1],
       [43.63300, 1.35750, 0, 30, 1],
@@ -1176,7 +1247,7 @@
       var Tk = Math.max(216.65, 288.15 - 0.0019812 * alt);
       var sigma = Math.pow(Tk / 288.15, 4.256);
       return {
-        hex: HEX, r: REG, t: 'A35K', flight: 'AIB01   ', squawk: '7000',
+        hex: HEX, r: REG, t: 'A35K', flight: 'AIB01   ', squawk: params.get('squawk') || '7000',
         alt_baro: gnd ? 'ground' : Math.round(alt / 25) * 25, gs: gs, track: trk,
         baro_rate: Math.round(vs / 64) * 64, lat: lat, lon: lon, seen_pos: 0,
         mach: gnd ? undefined : gs / (661.47 * Math.sqrt(Tk / 288.15)),
@@ -1184,6 +1255,8 @@
       };
     };
   }
+  // ?debug: internals for automated tests (synthetic reports, state)
+  if (params.has('debug')) window.a350fDebug = { ingest: ingest, state: function () { return st; } };
   if (DEMO) {
     var sim = demoSource();
     sourceName = 'démo';
@@ -1204,6 +1277,9 @@
     }
     var to = takeoffTime(), since = to ? t - to : Infinity;
     if (since < 150000) return 'decollage';
+    // a low pass, go-around or touch-and-go keeps the headline for 3 minutes
+    var ev = st.events[st.events.length - 1];
+    if (ev && /^(passage|remise|touchgo)$/.test(ev.type) && t - ev.at < 180000) return ev.type;
     var agl = (live.alt || HOME.elev) - HOME.elev, d = distHome(live), vs = live.vs;
     if (since > 600000 && vs < 300 && agl < 2500 && d < 15) return 'finale';
     if (since > 600000 && vs < 300 && agl < 7000 && d < 40) return 'approche';
@@ -1224,6 +1300,9 @@
     descente:  ['PREMIER VOL · EN DESCENTE', 'Premier vol, en descente'],
     approche:  ['RETOUR VERS TOULOUSE', 'Retour vers Toulouse'],
     finale:    ['EN FINALE À TOULOUSE', 'En finale à Toulouse'],
+    passage:   ['PASSAGE À BASSE ALTITUDE', 'Passage à basse altitude au-dessus de la piste'],
+    remise:    ['REMISE DES GAZ À TOULOUSE', 'Remise des gaz à Toulouse'],
+    touchgo:   ['TOUCHER ET REMISE DES GAZ', 'Toucher et remise des gaz'],
     atterri:   ['PREMIER VOL RÉUSSI !', 'Premier vol réussi !'],
     atterri2:  ['L\'A350F S\'EST POSÉ', 'L\'A350F s\'est posé']
   };
@@ -1390,6 +1469,7 @@
     fb('status', ctl.headline || hl[1]);
     fb('headline', ctl.headline ? 'custom' : 'auto');
     fb('mode', ctl.mode);
+    fb('alert', alertCode);
     fb('t_sched', fmtTS(T0));
     fb('label', hLabel);
     fb('alt', !live ? '' : live.gnd ? 'au sol' : ft(live.alt) + ' ft');

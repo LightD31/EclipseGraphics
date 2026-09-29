@@ -886,17 +886,20 @@
   /* Units: aviation (ft, kt, ft/min — the default) or metric (m, km/h, m/s)
      first, the other one as the secondary figure. ?units=metric, or the
      units.* commands at run time.
-     U(kind, value) → { n: number, u: unit, s: the same in the other units } */
+     U(kind, value[, fine]) → { n: number, u: unit, s: the same in the other units }
+     fine: altitude to 10 ft instead of the 25 ft of an ADS-B report (for the
+     rolling readouts, see tickFigures) */
   function metric() { return (ctl.units || params.get('units')) === 'metric'; }
-  function U(kind, v) {
+  function U(kind, v, fine) {
     var met = metric(), ms = (v * 0.00508).toFixed(1).replace('.', ',').replace(/^(\d)/, '+$1').replace('+0,0', '0');
-    if (kind === 'alt') return met ? { n: m(v), u: 'm', s: ft(v) + ' ft' } : { n: ft(v), u: 'ft', s: m(v) + ' m' };
+    var fv = fine ? nf.format(Math.round(v / 10) * 10) : ft(v);
+    if (kind === 'alt') return met ? { n: m(v), u: 'm', s: fv + ' ft' } : { n: fv, u: 'ft', s: m(v) + ' m' };
     if (kind === 'spd') return met ? { n: kmh(v), u: 'km/h', s: nf.format(Math.round(v)) + ' kt' }
                                    : { n: nf.format(Math.round(v)), u: 'kt', s: kmh(v) + ' km/h' };
     /* vertical speed */ return met ? { n: ms.replace('-', '−'), u: 'm/s', s: vsTxt(v) + ' ft/min' }
                                     : { n: vsTxt(v), u: 'ft/min', s: ms.replace('-', '−') + ' m/s' };
   }
-  function uTxt(kind, v) { var x = U(kind, v); return x.n + ' ' + x.u; }
+  function uTxt(kind, v, fine) { var x = U(kind, v, fine); return x.n + ' ' + x.u; }
   function vsTxt(v) { var r = Math.round(v / 50) * 50; return (r > 0 ? '+' : r < 0 ? '−' : '') + nf.format(Math.abs(r)); }
   function hdg(v) { return String(Math.round(v) % 360).padStart(3, '0') + '°'; }
   var DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
@@ -1609,6 +1612,63 @@
     return where.text;
   }
 
+  /* Strap (lower third) + flight-data panel (fullscreen), from the animated
+     figures F (see tickFigures) rather than the raw last report. */
+  function drawFigures(F) {
+    var sAlt, sSpd = '', sInfo, d = F ? distKm(F.lat, F.lon, HOME.lat, HOME.lon) : 0;
+    if (!live) {
+      sAlt = 'A350F'; sInfo = 'Toulouse-Blagnac · premier vol';
+    } else if (live.gnd) {
+      sAlt = 'Au sol';
+      sSpd = F.gs >= 3 ? uTxt('spd', F.gs) : '';
+      sInfo = (d < 6 ? 'Toulouse-Blagnac' : nf.format(d) + ' km de Toulouse') + (F.gs >= 3 ? ' · cap ' + hdg(F.trk) : '');
+    } else {
+      sAlt = uTxt('alt', F.alt, true);
+      sSpd = uTxt('spd', F.gs);
+      sInfo = (F.vs > 300 ? '▲ ' : F.vs < -300 ? '▼ ' : '') + uTxt('vs', F.vs) + ' · cap ' +
+              hdg(F.trk) + ' · ' + (whereNow() || nf.format(d) + ' km de Toulouse');
+    }
+    setText(el.sAlt, sAlt); setText(el.sSpd, sSpd); setText(el.sInfo, sInfo);
+    setText(el.tagalt, !live ? 'F-WXLD' : live.gnd ? 'AU SOL'
+                       : metric() ? uTxt('alt', F.alt) : 'FL' + pad(Math.round(F.alt / 100)).padStart(3, '0'));
+    var wtext = live && !live.gnd ? whereNow() : '';
+    setText(el.capwhere, wtext ? wtext.charAt(0).toUpperCase() + wtext.slice(1) : '');
+    fb('where', live ? whereNow() : '');
+
+    if (!live) {
+      for (var i = 1; i <= 6; i++) { setVal(i, '–', ''); setText($('ts' + i), '–'); }
+      setText(el.tk6, 'Indicatif');
+    } else {
+      if (live.gnd) { setVal(1, 'AU SOL', ''); setText($('ts1'), d < 6 ? 'Toulouse-Blagnac' : 'altitude terrain'); }
+      else {
+        var ua = U('alt', F.alt, true);
+        setVal(1, ua.n, ua.u); setText($('ts1'), ua.s + ' · FL' + String(Math.round(F.alt / 100)).padStart(3, '0'));
+      }
+      var us = U('spd', F.gs);
+      setVal(2, us.n, us.u); setText($('ts2'), us.s);
+      var uv = U('vs', live.gnd ? 0 : F.vs);
+      if (live.gnd) { setVal(3, '0', uv.u); setText($('ts3'), 'au sol'); }
+      else {
+        setVal(3, uv.n, uv.u);
+        setText($('ts3'), (F.vs > 300 ? 'en montée' : F.vs < -300 ? 'en descente' : 'en palier') + ' · ' + uv.s);
+      }
+      setVal(4, hdg(F.trk), ''); setText($('ts4'), compass(F.trk, true));
+      setVal(5, d < 10 ? d.toFixed(1).replace('.', ',') : nf.format(d), 'km');
+      setText($('ts5'), 'de Toulouse-Blagnac');
+      if (live.mach != null && !live.gnd) {
+        setText(el.tk6, 'Mach');
+        setVal(6, live.mach.toFixed(2).replace('.', ','), '');
+        setText($('ts6'), (live.ias != null ? 'IAS ' + uTxt('spd', live.ias) : '') +
+                          (live.oat != null ? ' · ' + Math.round(live.oat) + ' °C ext.' : ''));
+      } else {
+        setText(el.tk6, 'Indicatif');
+        setVal(6, live.flight || REG, '');
+        setText($('ts6'), live.squawk ? 'transpondeur ' + live.squawk : 'mode S ' + HEX.toUpperCase());
+      }
+    }
+
+  }
+
   function updateText() {
     var t = now(), T0 = schedTime(); // the operator may have moved it
     announce(t);
@@ -1647,58 +1707,7 @@
     setText(el.live, badge);
     el.live.classList.toggle('idle', idle);
 
-    // Strap (lower third) + flight-data panel (fullscreen)
-    var sAlt, sSpd = '', sInfo, d = live ? distHome(live) : 0;
-    if (!live) {
-      sAlt = 'A350F'; sInfo = 'Toulouse-Blagnac · premier vol';
-    } else if (live.gnd) {
-      sAlt = 'Au sol';
-      sSpd = live.gs >= 3 ? uTxt('spd', live.gs) : '';
-      sInfo = (d < 6 ? 'Toulouse-Blagnac' : nf.format(d) + ' km de Toulouse') + (live.gs >= 3 ? ' · cap ' + hdg(live.trk) : '');
-    } else {
-      sAlt = uTxt('alt', live.alt);
-      sSpd = uTxt('spd', live.gs);
-      sInfo = (live.vs > 300 ? '▲ ' : live.vs < -300 ? '▼ ' : '') + uTxt('vs', live.vs) + ' · cap ' +
-              hdg(live.trk) + ' · ' + (whereNow() || nf.format(d) + ' km de Toulouse');
-    }
-    setText(el.sAlt, sAlt); setText(el.sSpd, sSpd); setText(el.sInfo, sInfo);
-    setText(el.tagalt, !live ? 'F-WXLD' : live.gnd ? 'AU SOL'
-                       : metric() ? uTxt('alt', live.alt) : 'FL' + pad(Math.round(live.alt / 100)).padStart(3, '0'));
-    var wtext = live && !live.gnd ? whereNow() : '';
-    setText(el.capwhere, wtext ? wtext.charAt(0).toUpperCase() + wtext.slice(1) : '');
-    fb('where', live ? whereNow() : '');
-
-    if (!live) {
-      for (var i = 1; i <= 6; i++) { setVal(i, '–', ''); setText($('ts' + i), '–'); }
-      setText(el.tk6, 'Indicatif');
-    } else {
-      if (live.gnd) { setVal(1, 'AU SOL', ''); setText($('ts1'), d < 6 ? 'Toulouse-Blagnac' : 'altitude terrain'); }
-      else {
-        var ua = U('alt', live.alt);
-        setVal(1, ua.n, ua.u); setText($('ts1'), ua.s + ' · FL' + String(Math.round(live.alt / 100)).padStart(3, '0'));
-      }
-      var us = U('spd', live.gs);
-      setVal(2, us.n, us.u); setText($('ts2'), us.s);
-      var uv = U('vs', live.gnd ? 0 : live.vs);
-      if (live.gnd) { setVal(3, '0', uv.u); setText($('ts3'), 'au sol'); }
-      else {
-        setVal(3, uv.n, uv.u);
-        setText($('ts3'), (live.vs > 300 ? 'en montée' : live.vs < -300 ? 'en descente' : 'en palier') + ' · ' + uv.s);
-      }
-      setVal(4, hdg(live.trk), ''); setText($('ts4'), compass(live.trk, true));
-      setVal(5, d < 10 ? d.toFixed(1).replace('.', ',') : nf.format(d), 'km');
-      setText($('ts5'), 'de Toulouse-Blagnac');
-      if (live.mach != null && !live.gnd) {
-        setText(el.tk6, 'Mach');
-        setVal(6, live.mach.toFixed(2).replace('.', ','), '');
-        setText($('ts6'), (live.ias != null ? 'IAS ' + uTxt('spd', live.ias) : '') +
-                          (live.oat != null ? ' · ' + Math.round(live.oat) + ' °C ext.' : ''));
-      } else {
-        setText(el.tk6, 'Indicatif');
-        setVal(6, live.flight || REG, '');
-        setText($('ts6'), live.squawk ? 'transpondeur ' + live.squawk : 'mode S ' + HEX.toUpperCase());
-      }
-    }
+    var d = live ? distHome(live) : 0;
 
     // Ticker: sets of four, rotating every 12 s while there is time to
     // fill — the aircraft and the weather before take-off, the milestones
@@ -1983,15 +1992,44 @@
     new ResizeObserver(function () { mapW = mapEl.clientWidth; mapH = mapEl.clientHeight; reframe(); }).observe(mapEl);
   }
   new MutationObserver(reframe).observe(bar, { attributes: true, attributeFilter: ['class'] });
+  /* Animated figures: between two reports the altitude carries on at the
+     reported climb rate (for up to 10 s), and every figure eases towards
+     its latest value instead of jumping each time a report lands — the
+     readouts roll like an instrument. Drawn at ~15 Hz. */
+  var FIG = null, figDrawAt = 0;
+  function tickFigures(ts, dt, pl) {
+    if (!live) { if (ts - figDrawAt > 250) { figDrawAt = ts; drawFigures(null); } return; }
+    var fresh = DEMO || Date.now() - live.seenAt < 30000;
+    var ahead = fresh ? Math.max(0, Math.min(10000, now() - live.tl)) / 1000 : 0;
+    var altT = live.gnd || live.alt == null ? null : live.alt + live.vs / 60 * ahead;
+    var lat = live.lat, lon = live.lon;
+    if (pl) { lon = pl.x * 360 - 180; lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * pl.y))) / RAD; }
+    if (!FIG || FIG.gnd !== live.gnd || FIG.hex !== live.hex) {
+      FIG = { alt: altT, gs: live.gs, vs: live.vs, trk: live.trk, gnd: live.gnd, hex: live.hex };
+    } else {
+      var k = 1 - Math.exp(-dt / 0.5);
+      FIG.alt = altT == null ? null : FIG.alt == null ? altT : FIG.alt + (altT - FIG.alt) * k;
+      FIG.gs += (live.gs - FIG.gs) * k;
+      FIG.vs += (live.vs - FIG.vs) * k;
+      FIG.trk = (FIG.trk + ((((live.trk - FIG.trk) % 360) + 540) % 360 - 180) * k + 360) % 360;
+    }
+    FIG.lat = lat; FIG.lon = lon;
+    if (ts - figDrawAt < 66) return;
+    figDrawAt = ts;
+    drawFigures(FIG);
+  }
+
   function frame(ts) {
     requestAnimationFrame(frame);
     var dt = Math.min(0.25, (ts - (lastFrame || ts)) / 1000);
     lastFrame = ts;
+    var plNow = planeNow();
+    tickFigures(ts, dt, plNow);
     if (!mapW) { mapW = mapEl.clientWidth; mapH = mapEl.clientHeight; }
     var w = mapW, h = mapH;
     if (!w || !h) return;
     if (trackDirty) rebuildTrack();
-    var pl = planeNow();
+    var pl = plNow;
     shown = pl;
     var tgt = camTarget(w, h, pl);
     if (!cam) cam = { x: tgt.x, y: tgt.y, z: tgt.z };

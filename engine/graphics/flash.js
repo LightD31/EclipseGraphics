@@ -40,6 +40,8 @@
 
   GFX.type('flash', {
     label: 'Flash', icon: '⚡',
+    move: { box: '.fl-pos', when: function (f) { return f.anchor === 'free'; },
+            why: 'Ce flash est collé à un bandeau : choisissez « Libre » dans sa position pour le déplacer.' },
     desc: 'Messages courts en file d\'attente (événements, annonces), quelques secondes chacun',
     schema: schema,
     commands: [['banner.next', 'Passer'], ['banner.clear', 'Vider']],

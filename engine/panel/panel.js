@@ -103,7 +103,7 @@
       S.offset = d.serverTime - Date.now();
       S.name = d.show.name; S.show = d.show.config; S.rev = d.show.rev; stable = JSON.stringify(S.show);
       S.live = d.live; S.vars = d.vars || {}; S.media = d.media || []; S.shows = d.shows || [];
-      S.settings = d.settings; S.status = d.status; S.modules = d.modules || [];
+      S.settings = d.settings; S.status = d.status; S.modules = d.modules || []; S.modTypes = d.modTypes || {};
       $('offline').hidden = true;
       T.useUploaded(S.media);
       loadModules().then(renderAll);
@@ -128,6 +128,13 @@
       if (d.reset) S.vars = {}; else S.vars[d.m] = Object.assign(S.vars[d.m] || {}, d.v);
       if (S.tab === 'vars') refreshVarValues();
       if (S.tab === 'modules') refreshModules();
+      refreshRdMods();
+    });
+    es.addEventListener('mod', function (e) {
+      var d = JSON.parse(e.data);
+      rdMods.concat(modViews).forEach(function (v) {
+        if (v.id === d.m && v.ctl.onEvent) try { v.ctl.onEvent(d.event, d.data); } catch (err) { console.error(d.m, err); }
+      });
     });
     es.addEventListener('shows', function (e) { S.shows = JSON.parse(e.data).shows; renderHeader(); if (S.tab === 'shows') renderTab(); });
     es.addEventListener('media', function (e) { S.media = JSON.parse(e.data).media; T.useUploaded(S.media); if (S.tab === 'settings') renderTab(); });
@@ -161,15 +168,29 @@
       document.head.appendChild(s);
     }));
   }
+  /* Every installed module's descriptor, the graphic types it brings (so
+     they can be added and edited even before the module is switched on) and
+     its panel part */
   function loadModules() {
     return Promise.all(S.modules.map(function (id) {
       return script('modules/' + id + '/module.js').then(function () {
         var D = mod(id);
-        return D && D.panel ? script('modules/' + id + '/' + D.panel) : null;
+        if (!D) return null;
+        var files = Object.keys(D.graphics || {}).map(function (t) { return D.graphics[t]; });
+        if (D.panel) files.push(D.panel);
+        return files.reduce(function (p, f) { return p.then(function () { return script('modules/' + id + '/' + f); }); }, Promise.resolve());
       });
     }));
   }
   function mod(id) { return window.GFXModules && window.GFXModules[id]; }
+  /* A module's variables: a list, or a function of its settings for the
+     ones named after what the operator created (a timer, a feed…) */
+  function modVars(id) {
+    var D = mod(id);
+    if (!D || !D.vars) return [];
+    if (typeof D.vars !== 'function') return D.vars;
+    try { return D.vars(modSettings(id), U) || []; } catch (e) { return []; }
+  }
   function enabledMods() { return Object.keys(S.show.modules || {}).filter(function (id) { return S.show.modules[id] && S.show.modules[id].enabled && mod(id); }); }
   function modSettings(id) {
     var D = mod(id), m = (S.show.modules || {})[id] || {};
@@ -206,7 +227,7 @@
     }) });
     enabledMods().forEach(function (id) {
       var D = mod(id), items = [], seen = {};
-      (D.vars || []).forEach(function (v) { seen[v.name] = true; items.push([id + '.' + v.name, v.label, show((S.vars[id] || {})[v.name])]); });
+      modVars(id).forEach(function (v) { seen[v.name] = true; items.push([id + '.' + v.name, v.label, show((S.vars[id] || {})[v.name])]); });
       Object.keys(S.vars[id] || {}).forEach(function (k) { if (!seen[k] && k.charAt(0) !== '_') items.push([id + '.' + k, '', show(S.vars[id][k])]); });
       g.push({ title: D.label, items: items });
     });
@@ -243,6 +264,9 @@
         }
         var m = /^graphics:(\w+)$/.exec(source);
         if (m) return [['', 'Automatique']].concat(S.show.graphics.filter(function (x) { return x.type === m[1]; }).map(function (x) { return [x.id, x.name + ' (' + x.id + ')']; }));
+        /* a list a module draws from its settings: mod:<id>.<name> → its options[name](settings, U) */
+        var mo = /^mod:(\w+)\.(\w+)$/.exec(source), D = mo && mod(mo[1]), fn = D && D.options && D.options[mo[2]];
+        if (fn) { try { return [['', '— choisir —']].concat(fn(modSettings(mo[1]), U) || []); } catch (e) { return []; } }
         return [];
       }
     };
@@ -320,8 +344,179 @@
     try { pv.contentWindow.postMessage({ gfxReplay: S.sel }, location.origin); } catch (e) { /* ignore */ }
   });
 
+  // ===== Moving graphics in the preview =====
+  /* The preview is the real output page, scaled. A layer over it lets the
+     operator click a graphic to select it and drag it where it should be:
+     on drop, the graphic takes the anchor its new place calls for (the side,
+     or the centre, it is nearest to) and its margins from there — what its
+     Position fields say — and the move is one step of « Annuler ». Arrow
+     keys nudge the selected graphic (Maj : 10 px). What moves is each type's
+     `move` (engine/gfx.js): a free box (pos), a band on an edge (edge), the
+     bandeau at the bottom (dock). */
+  var mv = { drag: null, hover: null };
+  var hit = h('div', { id: 'pvHit', tabindex: '0',
+    title: 'Cliquez un graphique pour le choisir, glissez-le pour le déplacer (flèches : 1 px, Maj : 10 px)' });
+  var selBox = h('div', { class: 'pv-box sel' }), hovBox = h('div', { class: 'pv-box hov' }), tip = h('div', { class: 'pv-tip' });
+  var guideV = h('i', { class: 'pv-guide v' }), guideH = h('i', { class: 'pv-guide h' });
+  [hovBox, selBox, guideV, guideH, tip].forEach(function (x) { x.hidden = true; hit.appendChild(x); });
+  pvBox.appendChild(hit);
+  var SNAP = 16, SIDE = { t: 'en haut', m: 'au milieu', b: 'en bas', l: 'à gauche', c: 'au centre', r: 'à droite' };
+  function pvScale() { return pvBox.clientWidth / 1920; }
+  function ow() { try { return pv.contentWindow.GFXOutput || null; } catch (e) { return null; } }
+  function moveDef(g) { var d = g && GFX.types[g.type]; return d && d.move ? d.move : null; }
+  function canMove(g) { var m = moveDef(g); return !!m && (!m.when || !!m.when(fieldsOf(g), liveOf(g.id))); }
+  /* a graphic's movable box on the stage (1920×1080), or null when it isn't on screen */
+  function boxOf(g) {
+    var O = ow(), el = O && O.moveBox(g.id);
+    if (!el) return null;
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return { el: el, x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+  function frame(div, b) {
+    var k = pvScale();
+    div.style.left = (b.x * k) + 'px'; div.style.top = (b.y * k) + 'px';
+    div.style.width = (b.w * k) + 'px'; div.style.height = (b.h * k) + 'px';
+    div.hidden = false;
+  }
+  function drawBoxes() {
+    if (mv.drag || !S.show) return;
+    var g = S.sel && gById(S.sel), b = g && moveDef(g) && boxOf(g);
+    if (b) { frame(selBox, b); selBox.classList.toggle('locked', !canMove(g)); } else selBox.hidden = true;
+    var hg = mv.hover && mv.hover !== S.sel ? gById(mv.hover) : null, hb = hg && boxOf(hg);
+    if (hb) frame(hovBox, hb); else hovBox.hidden = true;
+  }
+  setInterval(drawBoxes, 300);
+  function stagePoint(e) { var r = pvBox.getBoundingClientRect(), k = pvScale(); return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }; }
+  /* the graphic under a point: the selected one first, then the topmost */
+  function under(p) {
+    if (!S.show) return null;
+    var list = S.show.graphics.filter(moveDef).reverse();
+    list.sort(function (a, b) { return (b.id === S.sel) - (a.id === S.sel); });
+    for (var i = 0; i < list.length; i++) {
+      var b = boxOf(list[i]);
+      if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return list[i];
+    }
+    return null;
+  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(v))); }
+  /* Where a box moved by (dx, dy) ends up: the fields to save, and the
+     move as it will look (snapped to the centre, kept on screen). keep:
+     the anchor letters an arrow key doesn't change. */
+  function target(g, b, dx, dy, keep) {
+    var m = moveDef(g), kind = m.kind || 'pos', f = fieldsOf(g), out = { fields: {} };
+    var x = b.x + dx, y = b.y + dy, cx = x + b.w / 2, cy = y + b.h / 2, rx = x, ry = y;
+    if (kind === 'edge') {
+      var top = cy < 540, my = clamp(top ? y : 1080 - y - b.h, 0, 600);
+      out.fields = { edge: top ? 'top' : 'bottom', my: my };
+      rx = b.x; ry = top ? my : 1080 - my - b.h;
+      out.label = (top ? 'en haut' : 'en bas') + ' · ' + my + ' px du bord';
+    } else if (kind === 'dock') {
+      var fit = f.layout && f.layout.width === 'fit', mb = clamp(1080 - y - b.h, 0, 400);
+      out.fields = { 'layout.my': mb };
+      ry = 1080 - mb - b.h;
+      if (fit) { var ml = clamp(x, 0, 400); out.fields['layout.mx'] = ml; rx = ml; } else rx = b.x;
+      out.label = 'marge du bas ' + mb + ' px' + (fit ? ' · à gauche ' + out.fields['layout.mx'] + ' px' : '');
+    } else {
+      var a0 = String(f.pos && f.pos.anchor || 'tl');
+      var hz = keep && keep.h ? a0.charAt(1) : Math.abs(cx - 960) < SNAP && !keep ? 'c' : cx < 960 ? 'l' : 'r';
+      var vt = keep && keep.v ? a0.charAt(0) : hz !== 'c' && !keep && Math.abs(cy - 540) < SNAP ? 'm' : cy < 540 ? 't' : 'b';
+      if (hz === 'c' && vt === 'm') vt = cy < 540 ? 't' : 'b';
+      var px = f.pos ? +f.pos.x || 0 : 0, py = f.pos ? +f.pos.y || 0 : 0;
+      if (hz === 'l') { px = clamp(x, 0, 960); rx = px; }
+      else if (hz === 'r') { px = clamp(1920 - x - b.w, 0, 960); rx = 1920 - px - b.w; }
+      else { rx = 960 - b.w / 2; out.snapX = true; }
+      if (vt === 't') { py = clamp(y, 0, 540); ry = py; }
+      else if (vt === 'b') { py = clamp(1080 - y - b.h, 0, 540); ry = 1080 - py - b.h; }
+      else { ry = 540 - b.h / 2; out.snapY = true; }
+      out.fields = { 'pos.anchor': vt + hz, 'pos.x': px, 'pos.y': py };
+      out.label = SIDE[vt] + ' ' + SIDE[hz] + ' · ' + [hz !== 'c' ? px + ' px du côté' : '', vt !== 'm' ? py + ' px du ' + (vt === 't' ? 'haut' : 'bas') : '']
+        .filter(Boolean).join(', ');
+    }
+    out.dx = rx - b.x; out.dy = ry - b.y;
+    return out;
+  }
+  function apply(g, t, el) {
+    g.fields = g.fields || {};
+    Object.keys(t.fields).forEach(function (k) { U.setPath(g.fields, k, t.fields[k]); });
+    var O = ow();
+    if (O) O.tryFields(g.id, g.fields);   /* the preview at once, no flicker back */
+    if (el) el.style.translate = '';
+    changed();
+    if (S.tab === 'edit' && S.sel === g.id) Object.keys(t.fields).forEach(function (k) { Forms.show($('tab'), k, t.fields[k]); });
+    setTimeout(drawBoxes, 30);
+  }
+  hit.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    var p = stagePoint(e), g = under(p);
+    hit.focus();
+    if (!g) return;
+    if (g.id !== S.sel) select(g.id);
+    if (!canMove(g)) { var m = moveDef(g); if (m && m.why) toast(m.why, true); return; }
+    var b = boxOf(g);
+    if (!b) return;
+    var kind = moveDef(g).kind || 'pos';
+    mv.drag = { g: g, b: b, p0: p, moved: false, t: null,
+                lockX: kind === 'edge' || (kind === 'dock' && !(fieldsOf(g).layout && fieldsOf(g).layout.width === 'fit')) };
+    hovBox.hidden = true;
+    try { hit.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    e.preventDefault();
+  });
+  hit.addEventListener('pointermove', function (e) {
+    var p = stagePoint(e), d = mv.drag;
+    if (!d) {
+      var g = under(p);
+      mv.hover = g ? g.id : null;
+      hit.style.cursor = g ? (canMove(g) ? 'move' : 'pointer') : '';
+      drawBoxes();
+      return;
+    }
+    var dx = d.lockX ? 0 : p.x - d.p0.x, dy = p.y - d.p0.y;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+    d.moved = true;
+    var t = d.t = target(d.g, d.b, dx, dy);
+    d.b.el.style.translate = t.dx + 'px ' + t.dy + 'px';
+    frame(selBox, { x: d.b.x + t.dx, y: d.b.y + t.dy, w: d.b.w, h: d.b.h });
+    guideV.hidden = !t.snapX; guideH.hidden = !t.snapY;
+    tip.textContent = t.label; tip.hidden = false;
+    var k = pvScale();
+    tip.style.left = Math.max(0, Math.min(pvBox.clientWidth - tip.offsetWidth, (d.b.x + t.dx) * k)) + 'px';
+    var below = (d.b.y + t.dy + d.b.h) * k + 4;
+    tip.style.top = (below + tip.offsetHeight > pvBox.clientHeight ? (d.b.y + t.dy) * k - tip.offsetHeight - 4 : below) + 'px';
+  });
+  function endDrag(cancel) {
+    var d = mv.drag;
+    mv.drag = null;
+    guideV.hidden = guideH.hidden = tip.hidden = true;
+    if (!d) return;
+    if (cancel || !d.moved || !d.t) { d.b.el.style.translate = ''; drawBoxes(); return; }
+    apply(d.g, d.t, d.b.el);
+    toast(d.g.name + ' : ' + d.t.label);
+  }
+  hit.addEventListener('pointerup', function () { endDrag(false); });
+  hit.addEventListener('pointercancel', function () { endDrag(true); });
+  hit.addEventListener('pointerleave', function () { if (!mv.drag) { mv.hover = null; hit.style.cursor = ''; drawBoxes(); } });
+  hit.addEventListener('keydown', function (e) {
+    var dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (e.key === 'Escape' && mv.drag) { endDrag(true); return; }
+    var g = dir && S.sel && gById(S.sel);
+    if (!g || !moveDef(g)) return;
+    e.preventDefault();
+    if (!canMove(g)) { if (moveDef(g).why) toast(moveDef(g).why, true); return; }
+    var b = boxOf(g);
+    if (!b) return;
+    var step = e.shiftKey ? 10 : 1, kind = moveDef(g).kind || 'pos';
+    if (kind !== 'pos' && dir[0]) {
+      if (kind === 'edge' || !(fieldsOf(g).layout && fieldsOf(g).layout.width === 'fit')) return;
+    }
+    apply(g, target(g, b, dir[0] * step, dir[1] * step, { h: !dir[0], v: !dir[1] }), null);
+  });
+
   // ===== Rundown =====
-  var rd = {};
+  var rd = {}, rdMods = [];
+  function refreshRdMods() {
+    rdMods.forEach(function (m) { if (m.ctl.refresh) try { m.ctl.refresh(); } catch (e) { console.error(m.id, e); } });
+  }
   function renderRundown() {
     var list = $('rdList');
     /* what was being typed in the rundown's fields survives the rebuild */
@@ -349,6 +544,17 @@
       quick(g, card, R);
       card.appendChild(state);
       list.appendChild(card);
+    });
+    /* modules with live controls of their own (a stopwatch's buttons, the
+       chat's messages…): a card each, under the graphics */
+    dropViews(rdMods); rdMods = [];
+    enabledMods().forEach(function (id) {
+      var ext = GFX.panels[id], D = mod(id);
+      if (!ext || !ext.rundown) return;
+      var body = h('div', { class: 'rd-modbody' });
+      list.appendChild(h('div', { class: 'rd-card rd-mod' }, [h('div', { class: 'rd-top' }, [
+        h('span', { class: 'rd-icon', text: D.icon || '◆' }), h('div', { class: 'rd-name', text: D.label }), h('span', { class: 'rd-type', text: 'module' })]), body]));
+      try { rdMods.push({ id: id, ctl: ext.rundown(body, moduleApi(id)) || {} }); } catch (e) { console.error(id, e); }
     });
     list.querySelectorAll('input[data-k]').forEach(function (i) {
       if (kept[i.dataset.k] != null) i.value = kept[i.dataset.k];
@@ -415,6 +621,19 @@
       row3.appendChild(btn(R, 'next', 'Passer', function () { cmd(g.id, 'banner.next'); }));
       row3.appendChild(btn(R, 'clear', 'Vider', function () { cmd(g.id, 'banner.clear'); }));
       card.appendChild(row3);
+    } else if (GFX.types[g.type] && GFX.types[g.type].quick) {
+      /* a module's graphic: its own controls (quick(card, env) → { update(live) → state text }) */
+      var mid = S.modTypes[g.type];
+      try {
+        R.q = GFX.types[g.type].quick(card, {
+          h: h, g: g, fields: function () { return fieldsOf(g); },
+          cmd: function (c, text) { return cmd(g.id, c, text); },
+          moduleCmd: function (c, text) { return cmd(mid, c, text); },
+          state: function () { return (S.live && S.live.modules && S.live.modules[mid]) || {}; },
+          vars: function () { return S.vars[mid] || {}; },
+          btn: function (key, label, fn, title) { return btn(R, key, label, fn, title); }
+        }) || {};
+      } catch (e) { console.error(g.id, e); }
     }
   }
   function viewsOf(g) {
@@ -464,20 +683,32 @@
         if (a) st += ' · collé à ' + a[1];
       } else if (g.type === 'card') st = { titre: 'titre', attente: 'attente', chiffres: 'chiffres clés', message: 'message' }[f.template] || '';
       else if (g.type === 'ticker') st = { crawl: 'défilement continu', rotate: 'un message à la fois', sets: 'séries' }[f.mode] || '';
+      else if (R.q && R.q.update) { try { st = R.q.update(L) || ''; } catch (e) { console.error(g.id, e); } }
       R.state.innerHTML = '';
       R.state.appendChild(h('span', { text: g.id + (st ? ' · ' : '') }));
       R.state.appendChild(h('b', { text: st }));
     });
+    refreshRdMods();
   }
   $('bAdd').addEventListener('click', function () {
-    var groups = [{ title: 'Ajouter un graphique', items: Object.keys(GFX.types).map(function (k) { return [k, GFX.types[k].label, GFX.types[k].desc]; }) }];
+    var groups = [{ title: 'Ajouter un graphique', items: [] }], byMod = {};
+    Object.keys(GFX.types).forEach(function (k) {
+      var mid = S.modTypes[k], it = [k, GFX.types[k].label, GFX.types[k].desc];
+      if (!mid) groups[0].items.push(it);
+      else if (mod(mid)) (byMod[mid] = byMod[mid] || []).push(it);
+    });
+    Object.keys(byMod).forEach(function (mid) { groups.push({ title: 'Module « ' + mod(mid).label + ' »', items: byMod[mid] }); });
     Forms.menu($('bAdd'), groups, addGraphic);
     var m = document.querySelector('.fm-menu');
     if (m) m.querySelectorAll('code').forEach(function (c) { c.textContent = GFX.types[c.textContent.replace(/[{}]/g, '')].icon || '▪'; });
   });
   function addGraphic(type) {
-    var def = GFX.types[type];
+    var def = GFX.types[type], mid = S.modTypes[type];
     var g = { id: uniqueId(type), type: type, name: def.label, fields: {}, motion: {} };
+    if (mid) {
+      var entry = S.show.modules[mid] = S.show.modules[mid] || { enabled: false, settings: {} };
+      if (!entry.enabled) { entry.enabled = true; setTimeout(function () { toast('Module « ' + mod(mid).label + ' » activé'); }, 700); }
+    }
     if (type === 'flash') {
       var b = S.show.graphics.find(function (x) { return x.type === 'bandeau'; });
       g.fields.anchor = b ? 'bandeau:' + b.id : 'free';
@@ -506,8 +737,11 @@
     renderHeader(); renderPills(); renderRundown(); setTab(S.tab);
     previewForce();
   }
+  /* a module's panel view may run timers: destroy() when it goes */
+  function dropViews(list) { list.forEach(function (v) { if (v.ctl && v.ctl.destroy) try { v.ctl.destroy(); } catch (e) { /* going anyway */ } }); }
   function renderTab() {
     var el = $('tab');
+    dropViews(modViews); modViews = [];
     el.innerHTML = '';
     if (!S.show) return;
     ({ edit: renderEdit, theme: renderTheme, motion: renderMotion, vars: renderVars, modules: renderModules,
@@ -888,10 +1122,11 @@
         rows.appendChild(h('tr', {}, [h('td', {}, [h('code', { text: '{{' + id + '.' + name + '}}', title: 'copier', style: 'cursor:pointer', onclick: function () { copy('{{' + id + '.' + name + '}}'); } })]),
           h('td', { text: label || '' }), td, h('td', {}, [comp])]));
       };
-      (D.vars || []).forEach(function (v) { seen[v.name] = true; add(v.name, v.label, v.screen); });
+      modVars(id).forEach(function (v) { seen[v.name] = true; add(v.name, v.label, v.screen); });
       Object.keys(S.vars[id] || {}).forEach(function (k) { if (!seen[k] && k.charAt(0) !== '_') add(k, ''); });
       el.appendChild(h('details', { class: 'fm-sec', open: true }, [h('summary', { text: D.label }), h('div', { class: 'fm-sec-body' }, [
-        h('p', { class: 'note', text: 'Valeurs calculées par le module dans une sortie ouverte (source OBS ou aperçu).' }), rows])]));
+        h('p', { class: 'note', text: D.client && D.client.length ? 'Valeurs calculées par le module dans une sortie ouverte (source OBS ou aperçu).' :
+          'Valeurs tenues à jour par le serveur.' }), rows])]));
     });
     refreshVarValues();
   }
@@ -911,7 +1146,7 @@
   // ===== Modules =====
   var modViews = [];
   function renderModules(el) {
-    modViews = [];
+    dropViews(modViews); modViews = [];
     el.appendChild(h('p', { class: 'note', text: 'Un module apporte des données en direct (calcul astronomique, position ADS-B…) et des visuels (ciel, carte) aux graphiques. Activez-le, réglez-le, puis choisissez ses visuels et ses variables dans les graphiques.' }));
     if (!S.modules.length) el.appendChild(h('p', { class: 'note', text: 'Aucun module installé (dossier modules/).' }));
     S.modules.forEach(function (id) {
@@ -940,8 +1175,25 @@
         set: function (k, v) { U.setPath(entry.settings, k, v); },
         values: function () { return modSettings(id); }
       }, formEnv(null));
+      var help = typeof D.cmdHelp === 'function' ? D.cmdHelp(modSettings(id)) : D.cmdHelp;
+      if (help && help.length) card.appendChild(moduleCommandsHelp(id, help));
     });
     refreshModules();
+  }
+  /* What Companion sends to a module: cmdHelp = [[command, effect, example
+     for its <…> part]] (or a function of the settings, for commands named
+     after what the operator created: a timer's id…) */
+  function moduleCommandsHelp(id, list) {
+    var base = location.origin + '/api/cmd/' + id + '/';
+    var tb = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Commande' }), h('th', { text: 'Effet' }), h('th', { text: 'Companion (HTTP GET)' })])]);
+    list.forEach(function (c) {
+      var url = base + c[0].replace(/<[^>]*>/g, c[2] || 'Texte');
+      tb.appendChild(h('tr', {}, [h('td', {}, [h('code', { text: c[0] })]), h('td', { text: c[1] }),
+        h('td', {}, [h('button', { class: 'fm-mini', text: 'copier l\'URL', title: url, onclick: function () { copy(url); } })])]));
+    });
+    return h('details', { class: 'fm-sec' }, [h('summary', { text: 'Commandes (Companion, OBS)' }), h('div', { class: 'fm-sec-body' }, [
+      h('p', { class: 'note' }, ['Companion : module « Generic HTTP », requête GET sur ', h('code', { text: base + '<commande>' }),
+        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + id + ':<commande>"}' }), '.']), tb])]);
   }
   function refreshModules() {
     modViews.forEach(function (v) { if (v.ctl.refresh) try { v.ctl.refresh(); } catch (e) { console.error(e); } });
@@ -953,6 +1205,17 @@
       state: function () { return (S.live && S.live.modules && S.live.modules[id]) || {}; },
       vars: function () { return S.vars[id] || {}; },
       settings: function () { return modSettings(id); },
+      /* change the module's settings (saved like any edit): setting(key, value)
+         or setting({ key: value, … }); the Modules tab redraws with them */
+      setting: function (key, value) {
+        var entry = S.show.modules[id] = S.show.modules[id] || { enabled: true, settings: {} };
+        entry.settings = entry.settings || {};
+        var o = typeof key === 'object' ? key : {};
+        if (typeof key !== 'object') o[key] = value;
+        Object.keys(o).forEach(function (k) { U.setPath(entry.settings, k, o[k]); });
+        changed();
+        if (S.tab === 'modules') renderTab();
+      },
       status: function () { return api('GET', 'api/modules/' + id + '/status'); },
       tz: tz, now: now, log: function () { return (S.status && S.status.log) || []; }
     };
@@ -1053,7 +1316,7 @@
     var mt = h('table', { class: 't' }, [h('tr', {}, ['', 'Fichier', 'Type', 'Taille', ''].map(function (x) { return h('th', { text: x }); }))]);
     S.media.forEach(function (m) {
       mt.appendChild(h('tr', {}, [h('td', {}, [m.kind === 'image' ? h('img', { src: m.url, style: 'height:28px;max-width:80px;object-fit:contain', alt: '' }) : null]),
-        h('td', {}, [h('code', { text: m.name })]), h('td', { text: { image: 'image', font: 'police', video: 'vidéo' }[m.kind] }),
+        h('td', {}, [h('code', { text: m.name })]), h('td', { text: { image: 'image', font: 'police', video: 'vidéo', data: 'données' }[m.kind] }),
         h('td', { text: (m.size / 1024).toFixed(0) + ' Kio' }),
         h('td', {}, [h('button', { class: 'fm-mini', text: '✕', onclick: function () {
           if (confirm('Supprimer ' + m.name + ' ?')) api('DELETE', 'api/media/' + encodeURIComponent(m.name)).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
@@ -1061,7 +1324,7 @@
     });
     var mf = h('input', { type: 'file', multiple: true, hidden: true });
     mf.addEventListener('change', function () { [].forEach.call(mf.files, function (f) { upload(f); }); });
-    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé) et polices, dans le dossier media/.' }),
+    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé), polices, et fichiers de données (CSV, JSON, RSS, texte) que le module « Flux de données » peut lire (/media/nom.csv) — dans le dossier media/.' }),
       mt, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: 'Importer des fichiers…', onclick: function () { mf.click(); } }), mf])]));
     setRefs.server = h('div');
     setRefs.log = h('pre', { class: 'log' });

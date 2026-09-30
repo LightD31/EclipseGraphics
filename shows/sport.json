@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "title": "Match en direct",
+  "timezone": "Europe/Paris",
+  "theme": { "preset": "sport" },
+  "motion": { "preset": "impact" },
+  "modules": {
+    "score": {
+      "enabled": true,
+      "settings": {
+        "a": { "name": "Aigles de Garonne", "short": "AIG", "color": "#1F6FEB", "logo": "" },
+        "b": { "name": "Loups du Tarn", "short": "LOU", "color": "#E1000F", "logo": "" },
+        "period": "mi-temps", "periods": 2, "steps": "1", "second": "", "announce": "But !"
+      }
+    },
+    "chrono": {
+      "enabled": true,
+      "settings": {
+        "timers": [
+          { "label": "Temps de jeu", "id": "match", "mode": "up", "duration": "45:00", "format": "ms", "end": "stop", "endText": "", "flash": "" },
+          { "label": "Mi-temps", "id": "pause", "mode": "down", "duration": "15:00", "format": "auto", "end": "stop", "endText": "Reprise", "flash": "Reprise du match" }
+        ]
+      }
+    }
+  },
+  "variables": [
+    { "name": "stade", "label": "Stade", "value": "Stade municipal" }
+  ],
+  "graphics": [
+    { "id": "tableau", "type": "scoreboard", "name": "Score", "fields": { "style": "compact", "clock": "{{chrono.match}}" }, "motion": {} },
+    { "id": "tableau_large", "type": "scoreboard", "name": "Score en grand", "fields": { "style": "large", "clock": "{{chrono.match}}", "pos": { "anchor": "bc", "x": 0, "y": 150 } }, "motion": {} },
+    { "id": "annonces", "type": "flash", "name": "Annonces", "fields": {
+        "anchor": "free", "duration": 7, "defaultTag": "Info", "pos": { "anchor": "tl", "x": 56, "y": 124 },
+        "presets": [
+          { "tag": "VAR", "title": "Vérification vidéo en cours", "sub": "", "dur": "" },
+          { "tag": "Changement", "title": "Remplacement", "sub": "", "dur": "" },
+          { "tag": "Info", "title": "Temps additionnel : 3 minutes", "sub": "", "dur": "" }
+        ] }, "motion": {} },
+    { "id": "joueurs", "type": "synthe", "name": "Joueurs", "fields": {
+        "entries": [
+          { "name": "Camille Martin", "role": "Aigles de Garonne · n° 9", "extra": "", "image": "" },
+          { "name": "Sam Durand", "role": "Loups du Tarn · n° 10", "extra": "", "image": "" },
+          { "name": "Alex Bernard", "role": "Arbitre", "extra": "", "image": "" }
+        ],
+        "autoOut": 7, "style": "barre", "pos": { "anchor": "bl", "x": 96, "y": 110 } }, "motion": {} },
+    { "id": "mitemps", "type": "card", "name": "Mi-temps", "fields": {
+        "template": "attente", "kicker": "Mi-temps", "title": "{{score.ligne}}", "subtitle": "{{var.stade}}",
+        "count": { "mode": "text", "label": "Reprise dans", "value": "{{chrono.pause}}" },
+        "bg": { "type": "gradient" } }, "motion": {} }
+  ]
+}

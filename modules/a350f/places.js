@@ -1,6 +1,6 @@
-/* Where is the A350F? Places for a350f-first-flight.html's position in
-   words: "à 12 km au nord de Mont-de-Marsan (Landes)", "au large
-   d'Arcachon", "au-dessus des Pyrénées"… Offline: towns + hand-traced lines.
+/* Where is the A350F? Places for the module's position in words: "à 12 km
+   au nord de Mont-de-Marsan (Landes)", "au large d'Arcachon", "au-dessus des
+   Pyrénées"… Offline: towns + hand-traced lines.
 
    Towns: GeoNames (https://www.geonames.org, CC BY 4.0), cities5000,
    south-west France, Andorra and northern Spain, thinned so that each

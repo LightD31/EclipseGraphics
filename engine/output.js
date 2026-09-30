@@ -36,9 +36,12 @@
     name: '', show: null, rev: -1, live: null, vars: {}, local: {}, media: [], offset: 0,
     G: {},            /* graphic id → { id, type, conf, fields, root, inst, onAir, anim, … } */
     mods: {},         /* module id → { id, D, api, inst } */
-    leader: [], ready: !window.obsstudio || !AUTO, visible: true
+    leader: [], ready: !window.obsstudio || !AUTO, visible: true,
+    modTypes: {}      /* graphic type a module brings → its module id */
   };
-  function now() { return Date.now(); }
+  /* The server's clock: timers started from the panel (a module's
+     stopwatch…) read the same on every machine */
+  function now() { return Date.now() + S.offset; }
   function tz() { return (S.show && S.show.timezone) || 'Europe/Paris'; }
 
   // ===== Variables =====
@@ -83,6 +86,7 @@
     es.addEventListener('hello', function (e) {
       var d = JSON.parse(e.data);
       S.offset = d.serverTime - Date.now();
+      S.modTypes = d.modTypes || {};
       S.media = d.media || [];
       S.vars = d.vars || {};
       S.live = d.live;
@@ -126,6 +130,8 @@
     var seen = {};
     S.show.graphics.forEach(function (g, i) {
       if (!shown(g) || !GFX.types[g.type]) return;
+      /* a module's own graphic only while the module runs (its data with it) */
+      if (S.modTypes[g.type] && !S.mods[S.modTypes[g.type]]) return;
       seen[g.id] = true;
       var G = S.G[g.id], key = JSON.stringify(g);
       if (G && G.type !== g.type) { destroyGraphic(G); G = null; }
@@ -227,7 +233,7 @@
     if (!S.ready || !S.visible) return false;
     if (G.type === 'flash') {
       var F = (S.live.flash || {})[G.id] || {};
-      if (!L.air || !F.current || now() + S.offset >= F.current.until) return false;
+      if (!L.air || !F.current || now() >= F.current.until) return false;
       if (G.anchor && !G.anchor.onAir) return false;
       return true;
     }
@@ -327,7 +333,7 @@
     // a flash whose time is up leaves even if the server's word is late
     for (var fid in S.G) if (S.G[fid].type === 'flash' && S.G[fid].onAir && S.live) {
       var F = (S.live.flash || {})[fid] || {};
-      if (!F.current || t + S.offset >= F.current.until) applyLive();
+      if (!F.current || t >= F.current.until) applyLive();
     }
   }, 100);
 
@@ -355,8 +361,11 @@
     });
     if (!ONLY.length && !EXCEPT.length) return ids;
     /* a page showing some graphics only runs the modules they use */
-    var used = JSON.stringify(S.show.graphics.filter(shown));
-    return ids.filter(function (id) { return used.indexOf('module:' + id + '.') >= 0 || used.indexOf('{{' + id + '.') >= 0; });
+    var mine = S.show.graphics.filter(shown), used = JSON.stringify(mine);
+    return ids.filter(function (id) {
+      return used.indexOf('module:' + id + '.') >= 0 || used.indexOf('{{' + id + '.') >= 0 ||
+        mine.some(function (g) { return S.modTypes[g.type] === id; });
+    });
   }
   var loading = null;
   function ensureModules() {
@@ -383,18 +392,22 @@
     var m = (S.show.modules || {})[id] || {};
     return U.withDefaults(U.clone(m.settings || {}), D ? U.schemaDefaults(D.settings) : {});
   }
+  /* module.js, its stylesheets, the graphic types it brings (graphics:
+     { type: file }), then its client scripts — a module that only feeds
+     variables from the server may have none */
   function startModule(id) {
     return loadScript('modules/' + id + '/module.js').then(function () {
       var D = window.GFXModules[id];
       (D.css || []).forEach(function (c) { loadCSS(modUrl(id, c)); });
-      return (D.client || []).reduce(function (p, f) { return p.then(function () { return loadScript(modUrl(id, f)); }); }, Promise.resolve())
+      var files = Object.keys(D.graphics || {}).map(function (t) { return D.graphics[t]; }).concat(D.client || []);
+      return files.reduce(function (p, f) { return p.then(function () { return loadScript(modUrl(id, f)); }); }, Promise.resolve())
         .then(function () {
           var factory = GFX.clients[id];
-          if (!factory) throw new Error('module ' + id + ' : pas de client');
+          if (!factory && (D.client || []).length) throw new Error('module ' + id + ' : pas de client');
           S.local[id] = {};
           var mod = S.mods[id] = { id: id, D: D };
           mod.api = moduleApi(id, D);
-          mod.inst = factory(mod.api) || {};
+          mod.inst = (factory && factory(mod.api)) || {};
         });
     });
   }
@@ -487,6 +500,21 @@
       if (k === 'f') command(b, 'map.toggle');
     });
   }
-  window.GFXOutput = { S: S, command: command, render: render };
+  window.GFXOutput = {
+    S: S, command: command, render: render,
+    /* for the panel's preview: the element a drag moves (the type's move.box) */
+    moveBox: function (id) {
+      var G = S.G[id], def = G && GFX.types[G.type];
+      if (!G || !def || !def.move || G.root.style.visibility === 'hidden') return null;
+      return G.root.querySelector(def.move.box);
+    },
+    /* fields tried at once, before the show comes back saved (the end of a drag) */
+    tryFields: function (id, fields) {
+      var G = S.G[id];
+      if (!G) return;
+      G.fields = U.withDefaults(U.clone(fields), GFX.types[G.type].defaults);
+      try { G.inst.update(G.fields); } catch (e) { console.error(id, e); }
+    }
+  };
   connect();
 })();

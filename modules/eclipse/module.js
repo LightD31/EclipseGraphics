@@ -1,6 +1,6 @@
 /* Module "eclipse" — a solar eclipse seen from one place, computed live
-   with the Astronomy Engine (astronomy.browser.min.js): the port of
-   eclipse-widget-broadcast.html onto the overlay engine.
+   with the Astronomy Engine (astronomy.browser.min.js, in this folder): the
+   eclipse broadcast overlay of August 2026, on the overlay engine.
 
    Read by the server (settings, commands, the old Companion event keys),
    the panel (settings form, variable list) and the output (client.js). */
@@ -18,7 +18,7 @@
     /* {"eclipse": "air.on"} (and the older {"eclipseLowerThird": …}) from
        Companion's OBS custom events still land here */
     legacyKeys: ['eclipse', 'eclipseLowerThird'],
-    client: ['/astronomy.browser.min.js', 'client.js'],
+    client: ['astronomy.browser.min.js', 'client.js'],
     css: ['client.css'],
     panel: 'panel.js',
     visuals: {

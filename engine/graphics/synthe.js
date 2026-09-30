@@ -48,6 +48,7 @@
 
   GFX.type('synthe', {
     label: 'Synthé', icon: '▤',
+    move: { box: '.sy-pos' },
     desc: 'Nom et fonction d\'un intervenant, liste préparée, sortie automatique',
     schema: schema,
     commands: [['air.toggle', 'Antenne'], ['entry.prev', '◀ Précédent'], ['entry.next', 'Suivant ▶']],

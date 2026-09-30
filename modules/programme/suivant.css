@@ -1,0 +1,29 @@
+/* ===== À suivre (module "programme") =====
+   [À SUIVRE  21:00  dans 12 min]
+   [ LE DÉBAT                    ]
+   [ quatre invités en plateau   ]
+   [ 21:45  Vos questions        ]   */
+.gfx-suivant { --nx-box: var(--c-base); --nx-label: var(--c-accent); }
+/* one width for the label, the box and the lines under it: the widest's */
+.nx-pos { position: absolute; display: flex; flex-direction: column; align-items: stretch; width: max-content; max-width: var(--nx-w, 640px); }
+.gfx-suivant[data-empty=on] .nx-pos { visibility: hidden; }
+.nx-head {
+  display: flex; align-items: baseline; gap: calc(12 * var(--u)); padding: calc(8 * var(--u)) calc(16 * var(--u));
+  background: var(--nx-label); color: var(--c-onAccent); white-space: nowrap; border-radius: var(--radius) var(--radius) 0 0;
+}
+.nx-label { font-size: calc(18 * var(--u)); line-height: 1; }
+.nx-time { font-size: calc(20 * var(--u)); line-height: 1; }
+.nx-eta { font-size: calc(15 * var(--u)); font-weight: var(--w-strong); opacity: 0.85; }
+.nx-box {
+  padding: calc(12 * var(--u)) calc(18 * var(--u)) calc(14 * var(--u)); max-width: 100%;
+  background: var(--nx-box); background-image: var(--gloss); color: var(--c-onBase);
+  border-radius: 0 0 var(--radius) var(--radius); box-shadow: var(--shadow);
+}
+.nx-title { font-size: calc(34 * var(--u)); line-height: 1.05; }
+.nx-sub { margin-top: calc(5 * var(--u)); font-size: calc(19 * var(--u)); color: var(--c-onBase-72); }
+.nx-more { display: flex; flex-direction: column; gap: calc(2 * var(--u)); margin-top: calc(4 * var(--u)); max-width: 100%; }
+.nx-line {
+  display: flex; align-items: baseline; gap: calc(12 * var(--u)); padding: calc(7 * var(--u)) calc(18 * var(--u));
+  background: var(--c-base-88); color: var(--c-onBase); font-size: calc(18 * var(--u)); border-radius: var(--radius);
+}
+.nx-ltime { color: var(--c-onBase-62); }

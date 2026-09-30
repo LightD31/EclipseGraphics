@@ -1,0 +1,65 @@
+/* ===== Tableau de score (module "score") =====
+   compact: [▌DOM ●|2 – 1|EXT▐][2E MI-TEMPS 45:12]  (a corner)
+   large:   [▌logo DOMICILE   | 2 – 1 |   EXTÉRIEUR logo▐]
+                          [2E MI-TEMPS 45:12]            */
+.gfx-scoreboard { --sb-team: var(--c-base); --sb-score: var(--c-surface); --sb-scoreText: var(--c-onSurface); }
+.sb-pos { position: absolute; display: flex; flex-direction: column; align-items: flex-start; }
+.sb-pos[data-anchor$=r] { align-items: flex-end; }
+.sb-pos[data-anchor$=c] { align-items: center; }
+.sb-box { display: flex; align-items: stretch; height: calc(52 * var(--u)); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+
+.sb-team {
+  position: relative; display: flex; align-items: center; gap: calc(10 * var(--u));
+  padding: 0 calc(16 * var(--u)); background: var(--sb-team); background-image: var(--gloss); color: var(--c-onBase);
+}
+.sb-team.b { flex-direction: row-reverse; }
+.sb-bar { align-self: stretch; width: calc(7 * var(--u)); margin-left: calc(-16 * var(--u)); flex: 0 0 auto; }
+.sb-team.b .sb-bar { margin-left: 0; margin-right: calc(-16 * var(--u)); }
+.sb-name { font-size: calc(28 * var(--u)); line-height: 1; min-width: calc(62 * var(--u)); text-align: center; white-space: nowrap; }
+.sb-logo { display: block; height: calc(34 * var(--u)); width: auto; }
+.sb-sec {
+  font-size: calc(17 * var(--u)); line-height: 1; padding: calc(3 * var(--u)) calc(7 * var(--u));
+  background: var(--c-onBase-12); border-radius: calc(3 * var(--u));
+}
+.sb-poss {
+  flex: 0 0 auto; width: calc(10 * var(--u)); height: calc(10 * var(--u)); border-radius: 50%;
+  background: var(--c-accent); box-shadow: 0 0 0 calc(2 * var(--u)) var(--c-onBase-22);
+}
+
+.sb-scores { display: flex; align-items: center; padding: 0 calc(4 * var(--u)); background: var(--sb-score); color: var(--sb-scoreText); }
+.sb-cell { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; align-self: stretch; min-width: calc(44 * var(--u)); }
+.sb-num { position: relative; z-index: 1; display: inline-block; font-size: calc(34 * var(--u)); line-height: 1; }
+.sb-dash { font-size: calc(22 * var(--u)); opacity: 0.4; }
+.sb-hit { position: absolute; inset: 0; z-index: 0; background: var(--c-accent); opacity: 0; }
+
+.sb-info {
+  display: flex; align-items: center; gap: calc(12 * var(--u)); padding: 0 calc(16 * var(--u));
+  background: var(--c-base2); color: var(--c-onBase); white-space: nowrap;
+}
+.sb-period { font-size: calc(16 * var(--u)); font-weight: var(--w-strong); text-transform: uppercase; letter-spacing: 1px; color: var(--c-onBase-72); }
+.sb-period sup { text-transform: none; font-size: 0.72em; vertical-align: 0.42em; line-height: 0; letter-spacing: 0; margin-right: 0.1em; }
+.sb-clock { font-size: calc(28 * var(--u)); line-height: 1; }
+.sb-note {
+  margin-top: calc(6 * var(--u)); padding: calc(7 * var(--u)) calc(14 * var(--u)); border-radius: var(--radius);
+  background: var(--c-accent); color: var(--c-onAccent); font-size: calc(18 * var(--u)); line-height: 1; box-shadow: var(--shadow);
+}
+
+/* Large: a band, full names and logos, the time under the score */
+.gfx-scoreboard[data-style=large] .sb-pos { align-items: center; }
+.gfx-scoreboard[data-style=large] .sb-box { position: relative; height: calc(84 * var(--u)); overflow: visible; }
+.gfx-scoreboard[data-style=large] .sb-team { min-width: calc(330 * var(--u)); padding: 0 calc(26 * var(--u)); gap: calc(16 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-bar { width: calc(10 * var(--u)); margin-left: calc(-26 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-team.b .sb-bar { margin-left: 0; margin-right: calc(-26 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-name { flex: 1 1 auto; min-width: 0; font-size: calc(38 * var(--u)); text-align: left; }
+.gfx-scoreboard[data-style=large] .sb-team.b .sb-name { text-align: right; }
+.gfx-scoreboard[data-style=large] .sb-logo { height: calc(58 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-scores { padding: 0 calc(10 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-cell { min-width: calc(74 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-num { font-size: calc(58 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-dash { font-size: calc(36 * var(--u)); }
+.gfx-scoreboard[data-style=large] .sb-info {
+  /* centred without a transform, which the entrance animates */
+  position: absolute; top: 100%; left: 0; right: 0; width: max-content; margin: 0 auto; height: calc(40 * var(--u));
+  border-radius: 0 0 var(--radius) var(--radius); box-shadow: var(--shadow);
+}
+.gfx-scoreboard[data-style=large] .sb-note { margin-top: calc(50 * var(--u)); }

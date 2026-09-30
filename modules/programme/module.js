@@ -17,9 +17,12 @@
     id: 'programme',
     label: 'Programme',
     icon: '☰',
-    desc: 'Le conducteur : ce qui passe, ce qui suit et dans combien de temps, pour un « À suivre » dans le défilant ou ' +
-          'le bandeau. En direct : aller à un sujet, suivant, précédent, et tout décaler quand on prend du retard.',
+    desc: 'Le conducteur : ce qui passe, ce qui suit et dans combien de temps — à l\'écran avec le graphique « À suivre », ' +
+          'ou dans le défilant et le bandeau. En direct : aller à un sujet, suivant, précédent, et tout décaler quand on prend du retard.',
     panel: 'panel.js',
+    /* its own graphic: what's next (or on now), anywhere on screen */
+    graphics: { suivant: 'suivant.js' },
+    css: ['suivant.css'],
     settings: [
       { title: 'Programme', open: true, fields: [
         { key: 'items', type: 'list', label: 'Sujets', add: 'Ajouter un sujet', itemLabel: '{{time}} {{title}}',

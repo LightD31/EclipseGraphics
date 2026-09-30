@@ -264,6 +264,9 @@
         }
         var m = /^graphics:(\w+)$/.exec(source);
         if (m) return [['', 'Automatique']].concat(S.show.graphics.filter(function (x) { return x.type === m[1]; }).map(function (x) { return [x.id, x.name + ' (' + x.id + ')']; }));
+        /* a list a module draws from its settings: mod:<id>.<name> → its options[name](settings, U) */
+        var mo = /^mod:(\w+)\.(\w+)$/.exec(source), D = mo && mod(mo[1]), fn = D && D.options && D.options[mo[2]];
+        if (fn) { try { return [['', '— choisir —']].concat(fn(modSettings(mo[1]), U) || []); } catch (e) { return []; } }
         return [];
       }
     };
@@ -339,6 +342,174 @@
   $('bReplay').addEventListener('click', function () {
     if (!S.sel) return toast('Sélectionnez un graphique', true);
     try { pv.contentWindow.postMessage({ gfxReplay: S.sel }, location.origin); } catch (e) { /* ignore */ }
+  });
+
+  // ===== Moving graphics in the preview =====
+  /* The preview is the real output page, scaled. A layer over it lets the
+     operator click a graphic to select it and drag it where it should be:
+     on drop, the graphic takes the anchor its new place calls for (the side,
+     or the centre, it is nearest to) and its margins from there — what its
+     Position fields say — and the move is one step of « Annuler ». Arrow
+     keys nudge the selected graphic (Maj : 10 px). What moves is each type's
+     `move` (engine/gfx.js): a free box (pos), a band on an edge (edge), the
+     bandeau at the bottom (dock). */
+  var mv = { drag: null, hover: null };
+  var hit = h('div', { id: 'pvHit', tabindex: '0',
+    title: 'Cliquez un graphique pour le choisir, glissez-le pour le déplacer (flèches : 1 px, Maj : 10 px)' });
+  var selBox = h('div', { class: 'pv-box sel' }), hovBox = h('div', { class: 'pv-box hov' }), tip = h('div', { class: 'pv-tip' });
+  var guideV = h('i', { class: 'pv-guide v' }), guideH = h('i', { class: 'pv-guide h' });
+  [hovBox, selBox, guideV, guideH, tip].forEach(function (x) { x.hidden = true; hit.appendChild(x); });
+  pvBox.appendChild(hit);
+  var SNAP = 16, SIDE = { t: 'en haut', m: 'au milieu', b: 'en bas', l: 'à gauche', c: 'au centre', r: 'à droite' };
+  function pvScale() { return pvBox.clientWidth / 1920; }
+  function ow() { try { return pv.contentWindow.GFXOutput || null; } catch (e) { return null; } }
+  function moveDef(g) { var d = g && GFX.types[g.type]; return d && d.move ? d.move : null; }
+  function canMove(g) { var m = moveDef(g); return !!m && (!m.when || !!m.when(fieldsOf(g), liveOf(g.id))); }
+  /* a graphic's movable box on the stage (1920×1080), or null when it isn't on screen */
+  function boxOf(g) {
+    var O = ow(), el = O && O.moveBox(g.id);
+    if (!el) return null;
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return { el: el, x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+  function frame(div, b) {
+    var k = pvScale();
+    div.style.left = (b.x * k) + 'px'; div.style.top = (b.y * k) + 'px';
+    div.style.width = (b.w * k) + 'px'; div.style.height = (b.h * k) + 'px';
+    div.hidden = false;
+  }
+  function drawBoxes() {
+    if (mv.drag || !S.show) return;
+    var g = S.sel && gById(S.sel), b = g && moveDef(g) && boxOf(g);
+    if (b) { frame(selBox, b); selBox.classList.toggle('locked', !canMove(g)); } else selBox.hidden = true;
+    var hg = mv.hover && mv.hover !== S.sel ? gById(mv.hover) : null, hb = hg && boxOf(hg);
+    if (hb) frame(hovBox, hb); else hovBox.hidden = true;
+  }
+  setInterval(drawBoxes, 300);
+  function stagePoint(e) { var r = pvBox.getBoundingClientRect(), k = pvScale(); return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }; }
+  /* the graphic under a point: the selected one first, then the topmost */
+  function under(p) {
+    if (!S.show) return null;
+    var list = S.show.graphics.filter(moveDef).reverse();
+    list.sort(function (a, b) { return (b.id === S.sel) - (a.id === S.sel); });
+    for (var i = 0; i < list.length; i++) {
+      var b = boxOf(list[i]);
+      if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return list[i];
+    }
+    return null;
+  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(v))); }
+  /* Where a box moved by (dx, dy) ends up: the fields to save, and the
+     move as it will look (snapped to the centre, kept on screen). keep:
+     the anchor letters an arrow key doesn't change. */
+  function target(g, b, dx, dy, keep) {
+    var m = moveDef(g), kind = m.kind || 'pos', f = fieldsOf(g), out = { fields: {} };
+    var x = b.x + dx, y = b.y + dy, cx = x + b.w / 2, cy = y + b.h / 2, rx = x, ry = y;
+    if (kind === 'edge') {
+      var top = cy < 540, my = clamp(top ? y : 1080 - y - b.h, 0, 600);
+      out.fields = { edge: top ? 'top' : 'bottom', my: my };
+      rx = b.x; ry = top ? my : 1080 - my - b.h;
+      out.label = (top ? 'en haut' : 'en bas') + ' · ' + my + ' px du bord';
+    } else if (kind === 'dock') {
+      var fit = f.layout && f.layout.width === 'fit', mb = clamp(1080 - y - b.h, 0, 400);
+      out.fields = { 'layout.my': mb };
+      ry = 1080 - mb - b.h;
+      if (fit) { var ml = clamp(x, 0, 400); out.fields['layout.mx'] = ml; rx = ml; } else rx = b.x;
+      out.label = 'marge du bas ' + mb + ' px' + (fit ? ' · à gauche ' + out.fields['layout.mx'] + ' px' : '');
+    } else {
+      var a0 = String(f.pos && f.pos.anchor || 'tl');
+      var hz = keep && keep.h ? a0.charAt(1) : Math.abs(cx - 960) < SNAP && !keep ? 'c' : cx < 960 ? 'l' : 'r';
+      var vt = keep && keep.v ? a0.charAt(0) : hz !== 'c' && !keep && Math.abs(cy - 540) < SNAP ? 'm' : cy < 540 ? 't' : 'b';
+      if (hz === 'c' && vt === 'm') vt = cy < 540 ? 't' : 'b';
+      var px = f.pos ? +f.pos.x || 0 : 0, py = f.pos ? +f.pos.y || 0 : 0;
+      if (hz === 'l') { px = clamp(x, 0, 960); rx = px; }
+      else if (hz === 'r') { px = clamp(1920 - x - b.w, 0, 960); rx = 1920 - px - b.w; }
+      else { rx = 960 - b.w / 2; out.snapX = true; }
+      if (vt === 't') { py = clamp(y, 0, 540); ry = py; }
+      else if (vt === 'b') { py = clamp(1080 - y - b.h, 0, 540); ry = 1080 - py - b.h; }
+      else { ry = 540 - b.h / 2; out.snapY = true; }
+      out.fields = { 'pos.anchor': vt + hz, 'pos.x': px, 'pos.y': py };
+      out.label = SIDE[vt] + ' ' + SIDE[hz] + ' · ' + [hz !== 'c' ? px + ' px du côté' : '', vt !== 'm' ? py + ' px du ' + (vt === 't' ? 'haut' : 'bas') : '']
+        .filter(Boolean).join(', ');
+    }
+    out.dx = rx - b.x; out.dy = ry - b.y;
+    return out;
+  }
+  function apply(g, t, el) {
+    g.fields = g.fields || {};
+    Object.keys(t.fields).forEach(function (k) { U.setPath(g.fields, k, t.fields[k]); });
+    var O = ow();
+    if (O) O.tryFields(g.id, g.fields);   /* the preview at once, no flicker back */
+    if (el) el.style.translate = '';
+    changed();
+    if (S.tab === 'edit' && S.sel === g.id) Object.keys(t.fields).forEach(function (k) { Forms.show($('tab'), k, t.fields[k]); });
+    setTimeout(drawBoxes, 30);
+  }
+  hit.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    var p = stagePoint(e), g = under(p);
+    hit.focus();
+    if (!g) return;
+    if (g.id !== S.sel) select(g.id);
+    if (!canMove(g)) { var m = moveDef(g); if (m && m.why) toast(m.why, true); return; }
+    var b = boxOf(g);
+    if (!b) return;
+    var kind = moveDef(g).kind || 'pos';
+    mv.drag = { g: g, b: b, p0: p, moved: false, t: null,
+                lockX: kind === 'edge' || (kind === 'dock' && !(fieldsOf(g).layout && fieldsOf(g).layout.width === 'fit')) };
+    hovBox.hidden = true;
+    try { hit.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    e.preventDefault();
+  });
+  hit.addEventListener('pointermove', function (e) {
+    var p = stagePoint(e), d = mv.drag;
+    if (!d) {
+      var g = under(p);
+      mv.hover = g ? g.id : null;
+      hit.style.cursor = g ? (canMove(g) ? 'move' : 'pointer') : '';
+      drawBoxes();
+      return;
+    }
+    var dx = d.lockX ? 0 : p.x - d.p0.x, dy = p.y - d.p0.y;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+    d.moved = true;
+    var t = d.t = target(d.g, d.b, dx, dy);
+    d.b.el.style.translate = t.dx + 'px ' + t.dy + 'px';
+    frame(selBox, { x: d.b.x + t.dx, y: d.b.y + t.dy, w: d.b.w, h: d.b.h });
+    guideV.hidden = !t.snapX; guideH.hidden = !t.snapY;
+    tip.textContent = t.label; tip.hidden = false;
+    var k = pvScale();
+    tip.style.left = Math.max(0, Math.min(pvBox.clientWidth - tip.offsetWidth, (d.b.x + t.dx) * k)) + 'px';
+    var below = (d.b.y + t.dy + d.b.h) * k + 4;
+    tip.style.top = (below + tip.offsetHeight > pvBox.clientHeight ? (d.b.y + t.dy) * k - tip.offsetHeight - 4 : below) + 'px';
+  });
+  function endDrag(cancel) {
+    var d = mv.drag;
+    mv.drag = null;
+    guideV.hidden = guideH.hidden = tip.hidden = true;
+    if (!d) return;
+    if (cancel || !d.moved || !d.t) { d.b.el.style.translate = ''; drawBoxes(); return; }
+    apply(d.g, d.t, d.b.el);
+    toast(d.g.name + ' : ' + d.t.label);
+  }
+  hit.addEventListener('pointerup', function () { endDrag(false); });
+  hit.addEventListener('pointercancel', function () { endDrag(true); });
+  hit.addEventListener('pointerleave', function () { if (!mv.drag) { mv.hover = null; hit.style.cursor = ''; drawBoxes(); } });
+  hit.addEventListener('keydown', function (e) {
+    var dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (e.key === 'Escape' && mv.drag) { endDrag(true); return; }
+    var g = dir && S.sel && gById(S.sel);
+    if (!g || !moveDef(g)) return;
+    e.preventDefault();
+    if (!canMove(g)) { if (moveDef(g).why) toast(moveDef(g).why, true); return; }
+    var b = boxOf(g);
+    if (!b) return;
+    var step = e.shiftKey ? 10 : 1, kind = moveDef(g).kind || 'pos';
+    if (kind !== 'pos' && dir[0]) {
+      if (kind === 'edge' || !(fieldsOf(g).layout && fieldsOf(g).layout.width === 'fit')) return;
+    }
+    apply(g, target(g, b, dir[0] * step, dir[1] * step, { h: !dir[0], v: !dir[1] }), null);
   });
 
   // ===== Rundown =====

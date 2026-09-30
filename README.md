@@ -80,9 +80,17 @@ Server Settings: port and password) and Companion's address (its web interface, 
   timers' buttons, the score, now and next with the running order's takeover, the chat's
   messages and questions. **Tout retirer** takes everything off air.
 - **Preview** — the real output page, scaled, over a choice of backgrounds; it shows the
-  selected graphic even off air, and replays its entrance on demand.
+  selected graphic even off air, and replays its entrance on demand. **Graphics are moved
+  by dragging them there**: click one to select it, drag it where it belongs. On drop it
+  takes the anchor its new place calls for — the corner or side it is nearest to, the
+  centre when it's dropped near the middle (it snaps) — and its margins from there, so it
+  stays put when its text grows; the arrow keys nudge it (Maj : 10 px), and « Annuler »
+  takes a move back. Every graphic with a position moves this way — name straps, flashes,
+  the corner bug, the modules' scoreboard, weather, chat, timer and « À suivre » — as well
+  as the ticker (to the top or bottom edge) and the bandeau (its bottom margin); a flash
+  glued to a bandeau and the fullscreen cards stay where they are.
 - **Graphique** — the selected graphic's form: every text (with a `{ }` button to insert
-  a variable), images and videos, position, size, colours (empty: the theme's), motion
+  a variable), images and videos, position (as numbers, or by dragging in the preview), size, colours (empty: the theme's), motion
   overrides; its place in the stack, duplicate, delete, and the Companion commands it
   answers to, with their URLs to copy.
 - **Thème** — presets, the nine colour tokens, the three font roles (headings, text,
@@ -234,11 +242,11 @@ Each module's README has its full reference: settings, commands, variables.
 
 | Module | | Brings |
 |---|---|---|
-| [`chrono`](modules/chrono/README.md) — Minuteurs | Stopwatches and countdowns run from the rundown or Companion: start, pause, set, nudge, overtime, a flash at zero. Kept by the server, the same time everywhere. | `{{chrono.<id>}}` for any timer field |
+| [`chrono`](modules/chrono/README.md) — Minuteurs | Stopwatches and countdowns run from the rundown or Companion: start, pause, set, nudge, overtime, a flash at zero. Kept by the server, the same time everywhere. | the **Minuteur** graphic (a chip, or big), and `{{chrono.<id>}}` for any timer field |
 | [`score`](modules/score/README.md) — Tableau de score | Two teams, points, a second counter, period, possession, a note; announcements for each point. | the **Tableau de score** graphic (compact or large) |
 | [`meteo`](modules/meteo/README.md) — Météo | The weather and the next days from Open-Meteo (free, no key). | the **Météo** corner graphic, a bandeau visual, ticker lists |
 | [`flux`](modules/flux/README.md) — Flux de données | RSS/Atom, JSON, CSV (Google Sheets) or text, from the web or the media library, read on a schedule. | variables and ticker lists |
-| [`programme`](modules/programme/README.md) — Programme | The running order: now, next, in how long; takeover and a delay shift live. | variables and ticker lists |
+| [`programme`](modules/programme/README.md) — Programme | The running order: now, next, in how long; takeover and a delay shift live. | the **À suivre** graphic, variables and ticker lists |
 | [`twitch`](modules/twitch/README.md) — Chat Twitch | A channel's chat read anonymously, a question queue; the operator picks what goes on air, and moderated messages leave the screen at once. | the **Message du chat** graphic |
 | [`eclipse`](modules/eclipse/README.md) — Éclipse solaire | A solar eclipse's local circumstances, computed live. | sky and true-scale visuals for the bandeau |
 | [`a350f`](modules/a350f/README.md) — Premier vol A350F | A flight tracked over ADS-B (relay and recorder in the server): phases, milestones, position in words. | live map, flight profile, flight data and recap for the bandeau |
@@ -259,7 +267,9 @@ A module is a folder, `modules/<id>/` (the folder's name is its id):
   the map's framing), `stateVars` (Companion variables drawn from the state), `now()` (a
   shared clock, for demos), `legacyKeys` (OBS event keys routed to it); and the files it
   brings: `graphics` (`{ type: file }`, graphic types — `GFX.type(…)`, like
-  `engine/graphics/*` —, loaded by the panel and the outputs), `client`, `css`, `panel`.
+  `engine/graphics/*` —, loaded by the panel and the outputs; a type's `move` says which
+  of its elements the preview drags: see `engine/gfx.js`), `options` (lists its graphics'
+  forms offer, `options: 'mod:<id>.<name>'`), `client`, `css`, `panel`.
 - **`server.js`** (optional) — `exports.init(ctx)` → `{ routes, status(), onShow(config),
   commands, command, onCommand(name, value), stop() }`. `ctx` gives the module's
   `settings()` and live `state()` (`changed()` after editing it), `setVars({…})` (variables

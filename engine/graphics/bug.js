@@ -31,6 +31,7 @@
 
   GFX.type('bug', {
     label: 'Logo et horloge', icon: '◷',
+    move: { box: '.bg-pos' },
     desc: 'Coin d\'écran : logo, pastille « en direct », texte, compte à rebours, horloge',
     schema: schema,
     create: function (ctx, f) {

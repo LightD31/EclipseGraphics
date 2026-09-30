@@ -61,7 +61,7 @@ exports.init = function (ctx) {
         }
       }
       const d = shown(t, e, now);
-      v[t.id] = d.text; v[t.id + '_etat'] = d.state; v[t.id + '_s'] = String(d.secs); v[t.id + '_nom'] = t.label;
+      v[t.id] = d.text; v[t.id + '_etat'] = d.state; v[t.id + '_s'] = String(d.secs); v[t.id + '_nom'] = t.label; v[t.id + '_sens'] = t.mode;
     }
     if (changed) ctx.changed();
     ctx.setVars(v);

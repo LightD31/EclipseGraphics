@@ -30,6 +30,7 @@
 
   GFX.type('chat', {
     label: 'Message du chat', icon: '✉',
+    move: { box: '.ch-pos' },
     desc: 'Le message du chat Twitch choisi dans la régie (module Chat Twitch)',
     schema: schema,
     create: function (ctx, f) {

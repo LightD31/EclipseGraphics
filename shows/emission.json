@@ -63,6 +63,8 @@
         { "tag": "Chat", "title": "Posez vos questions avec !question", "sub": "", "dur": "" } ] }, "motion": {} },
     { "id": "breves", "type": "ticker", "name": "Brèves", "fields": { "mode": "crawl", "items": [], "itemsVar": "flux.breves_liste", "tag": "Brèves", "edge": "top", "clock": false }, "motion": {} },
     { "id": "meteo_coin", "type": "meteo", "name": "Météo", "fields": { "label": "{{meteo.lieu}}", "days": "0", "pos": { "anchor": "tr", "x": 56, "y": 96 } }, "motion": {} },
+    { "id": "parole", "type": "minuteur", "name": "Temps de parole", "fields": { "timer": "parole", "style": "grand", "warn": 20, "pos": { "anchor": "tc", "x": 0, "y": 110 } }, "motion": {} },
+    { "id": "a_suivre", "type": "suivant", "name": "À suivre", "fields": { "what": "next", "more": "1", "pos": { "anchor": "tl", "x": 96, "y": 110 } }, "motion": {} },
     { "id": "chat", "type": "chat", "name": "Message du chat", "fields": { "style": "bulle", "kicker": "Dans le chat", "pos": { "anchor": "bl", "x": 96, "y": 330 } }, "motion": {} },
     { "id": "invites", "type": "synthe", "name": "Invités", "fields": {
         "entries": [

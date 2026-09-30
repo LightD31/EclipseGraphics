@@ -64,6 +64,8 @@ exports.init = function (ctx) {
       mode: st.manual != null ? 'manuel' : 'auto',
       retard: w.shift ? (w.shift > 0 ? '+' : '−') + Math.abs(w.shift) + ' min' : '',
       liste: up.map(x => (hm(x) ? hm(x) + ' · ' : '') + x.title + (x.sub ? ' — ' + x.sub : '')),
+      /* the same, as figures for the "À suivre" graphic (not for Companion) */
+      _suite: w.list.slice(nextIdx, nextIdx + 4).map(x => ({ time: hm(x), title: x.title, sub: x.sub })),
       ticker: up.length ? [up.map((x, k) => [(k === 0 ? (s.nextLabel || 'À suivre') + ' · ' : '') + hm(x), x.title, x.sub])] : []
     });
   }

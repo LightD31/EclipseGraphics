@@ -71,9 +71,14 @@
     label: 'Minuteurs',
     icon: '◷',
     desc: 'Chronomètres et comptes à rebours pilotés en direct (temps de parole, pause, match) : tenus par le serveur, ' +
-          'ils affichent la même chose partout. Chaque minuteur est une variable, {{chrono.<identifiant>}}, à placer dans ' +
-          'n\'importe quel texte (minuteur du bandeau en mode « Texte / variable », carte, logo et horloge, défilant).',
+          'ils affichent la même chose partout. À l\'écran avec le graphique « Minuteur », ou dans n\'importe quel texte ' +
+          'avec leur variable {{chrono.<identifiant>}} (minuteur du bandeau, carte, logo et horloge, tableau de score).',
     panel: 'panel.js',
+    /* its own graphic: a timer on screen, anywhere */
+    graphics: { minuteur: 'minuteur.js' },
+    css: ['minuteur.css'],
+    /* the lists its graphic's form offers (mod:chrono.timers) */
+    options: { timers: function (s, U) { return timers(s, U).map(function (t) { return [t.id, t.label]; }); } },
     settings: [
       { title: 'Minuteurs', open: true, fields: [
         { key: 'timers', type: 'list', label: 'Minuteurs', add: 'Ajouter un minuteur', itemLabel: '{{label}}',
@@ -103,7 +108,8 @@
         out.push({ name: t.id, label: t.label + ' : le temps affiché' },
                  { name: t.id + '_etat', label: t.label + ' : pret, en_cours, pause, fini' + (down(t) && t.end === 'over' ? ', depasse' : '') },
                  { name: t.id + '_s', label: t.label + ' : en secondes (' + (down(t) ? 'restantes, négatif en dépassement' : 'écoulées') + ')' },
-                 { name: t.id + '_nom', label: t.label + ' : son nom' });
+                 { name: t.id + '_nom', label: t.label + ' : son nom' },
+                 { name: t.id + '_sens', label: t.label + ' : down (compte à rebours) ou up' });
       });
       return out;
     },

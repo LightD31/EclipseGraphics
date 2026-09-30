@@ -13,9 +13,13 @@ the last one started. Live, the rundown's card shows now and next, and lets the 
 take over — next, previous, go to an item — and shift every time when the show runs late
 (−5, +5, +10 min); « Horaire » gives the clock back.
 
-The `emission` show uses it for the bandeau's headline (`{{programme.titre}}`), the strap
-(`{{programme.suivant_heure}} {{programme.suivant}}`) and the bandeau's ticker
-(`programme.ticker`).
+On screen: the **À suivre** graphic (« + Ajouter » → *Module « Programme »*) shows what
+comes next — or what's on now — with its time, its detail, in how long, and if you like
+the one to three items after it; drag it where it belongs in the preview. When the
+running order moves on while it's on air, the new item swaps in. The variables also go
+anywhere else: the `emission` show uses them for the bandeau's headline
+(`{{programme.titre}}`), the strap (`{{programme.suivant_heure}} {{programme.suivant}}`)
+and the bandeau's ticker (`programme.ticker`).
 
 ## Commands
 

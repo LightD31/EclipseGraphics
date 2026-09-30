@@ -500,6 +500,21 @@
       if (k === 'f') command(b, 'map.toggle');
     });
   }
-  window.GFXOutput = { S: S, command: command, render: render };
+  window.GFXOutput = {
+    S: S, command: command, render: render,
+    /* for the panel's preview: the element a drag moves (the type's move.box) */
+    moveBox: function (id) {
+      var G = S.G[id], def = G && GFX.types[G.type];
+      if (!G || !def || !def.move || G.root.style.visibility === 'hidden') return null;
+      return G.root.querySelector(def.move.box);
+    },
+    /* fields tried at once, before the show comes back saved (the end of a drag) */
+    tryFields: function (id, fields) {
+      var G = S.G[id];
+      if (!G) return;
+      G.fields = U.withDefaults(U.clone(fields), GFX.types[G.type].defaults);
+      try { G.inst.update(G.fields); } catch (e) { console.error(id, e); }
+    }
+  };
   connect();
 })();

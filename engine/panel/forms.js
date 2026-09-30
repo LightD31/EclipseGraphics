@@ -53,7 +53,7 @@
   function safeIf(fn, vals) { try { return !!fn(vals); } catch (e) { return true; } }
 
   function field(parent, f, target, env, refresh) {
-    var row = h('div', { class: 'fm-row fm-' + f.type });
+    var row = h('div', { class: 'fm-row fm-' + f.type, 'data-key': f.key });
     var label = h('label', { class: 'fm-label', text: f.label || f.key });
     var ctl = h('div', { class: 'fm-ctl' });
     row.appendChild(label); row.appendChild(ctl);
@@ -289,5 +289,13 @@
     setTimeout(function () { document.addEventListener('mousedown', outside, true); }, 0);
   }
 
-  window.Forms = { render: render, h: h, menu: menu, TYPES: TYPES };
+  /* A value changed from outside the form (a drag in the preview): shown in
+     its field without redrawing the form (its open sections stay open) */
+  function show(container, key, value) {
+    var row = container && container.querySelector('.fm-row[data-key="' + key + '"]');
+    var ctl = row && row.querySelector('select, input:not([type=range]):not([type=checkbox])');
+    if (ctl) ctl.value = value == null ? '' : String(value);
+  }
+
+  window.Forms = { render: render, show: show, h: h, menu: menu, TYPES: TYPES };
 })();

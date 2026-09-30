@@ -106,6 +106,8 @@
 
   GFX.type('bandeau', {
     label: 'Bandeau', icon: '▬',
+    move: { box: '.bd-bar', kind: 'dock', when: function (f, L) { return (L.layout || 'lower') === 'lower'; },
+            why: 'En plein écran, le bandeau occupe l\'écran : repassez en bandeau pour le déplacer.' },
     desc: 'Titre, bande d\'info, défilant et minuteur ; plein écran avec carte ou visuel de module',
     schema: schema,
     commands: [['air.toggle', 'Antenne'], ['layout.lower', 'Bandeau'], ['layout.full', 'Plein écran'], ['layout.recap', 'Bilan'],

@@ -13,10 +13,18 @@ minutes), the display (`04:59`, `00:04:59`, minutes only, seconds only), and wha
 countdown does at zero: stop, or carry on in overtime (`+00:12`), with an optional text
 and a flash message.
 
-Then put the timer in any text as `{{chrono.<id>}}`: a bandeau's timer (mode « Texte /
-variable »), a fullscreen card's countdown, the corner bug's text, a scoreboard's time of
-play, a ticker. Each timer gets its buttons in the rundown: start / stop, reset, −1 min,
-−10 s, +10 s, +1 min, and a field to set a new duration.
+Then show it:
+
+- the **Minuteur** graphic (« + Ajouter » → *Module « Minuteurs »*): one timer, as a chip
+  (its name and the time on one line) or big (the time in large figures, its name above),
+  placed anywhere — drag it in the preview. A countdown takes the warning colour in its
+  last seconds (30 by default) and the alert colour at zero and in overtime, blinking if
+  you like;
+- or in any text as `{{chrono.<id>}}`: a bandeau's timer (mode « Texte / variable »), a
+  fullscreen card's countdown, the corner bug's text, a scoreboard's time of play, a ticker.
+
+Each timer gets its buttons in the rundown: start / stop, reset, −1 min, −10 s, +10 s,
++1 min, and a field to set a new duration.
 
 ## Commands
 
@@ -38,7 +46,7 @@ as an OBS custom event:
 | `{{chrono.<id>}}` | The time as shown (`04:59`, `+00:12` in overtime, the text at zero). |
 | `{{chrono.<id>_etat}}` | `pret`, `en_cours`, `pause`, `fini`, `depasse`. |
 | `{{chrono.<id>_s}}` | In seconds: left (negative in overtime) or elapsed — for Companion feedback ("red under 30 s"). |
-| `{{chrono.<id>_nom}}` | Its name. |
+| `{{chrono.<id>_nom}}` · `{{chrono.<id>_sens}}` | Its name · `down` (a countdown) or `up`. |
 | `{{chrono.event_text}}` · `event_n` | The last flash a countdown sent, and how many so far. |
 
 In Companion: `chrono_<id>`, `chrono_<id>_etat`, `chrono_<id>_s`…

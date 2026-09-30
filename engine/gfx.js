@@ -2,11 +2,17 @@
    share. Loaded by the output page and by the panel (which only reads the
    schemas, to draw its forms).
 
-     GFX.type(name, { label, icon, desc, schema, create(ctx) → instance })
+     GFX.type(name, { label, icon, desc, schema, move, create(ctx) → instance })
        schema: [{ title, fields: [{ key, type, label, default, … }] }] — the
        panel's form and the defaults both come from it (see panel/forms.js for
        the field types). An instance: { parts(), update(fields), setLive(live,
        prev), tick(now), onIn(), onOut(), slot(name), destroy() }.
+       move: what the panel's preview lets the operator drag — { box: the
+       selector of the element that moves, kind: 'pos' (default: the fields
+       pos.anchor, pos.x, pos.y, as GFX.place reads them) | 'edge' (a band:
+       edge top/bottom and my) | 'dock' (the bandeau: layout.my, and
+       layout.mx when it fits its content), when(fields, live) → movable now?,
+       why: the reason when it isn't }
      GFX.client(moduleId, factory(api) → module instance)  (modules/<id>/client.js)
      GFX.panel(moduleId, { render(el, api) })                (modules/<id>/panel.js) */
 (function () {

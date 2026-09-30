@@ -1,0 +1,26 @@
+/* ===== Minuteur (module "chrono") =====
+   pastille: [LIBELLÉ  04:59]      grand:  LIBELLÉ
+                                           04:59      */
+.gfx-minuteur { --mn-box: var(--c-base); --mn-warn: #E8960C; --mn-alert: var(--c-live); }
+.mn-pos { position: absolute; }
+.mn-box {
+  display: flex; align-items: center; gap: calc(14 * var(--u)); height: calc(56 * var(--u)); padding: 0 calc(20 * var(--u));
+  background: var(--mn-box); background-image: var(--gloss); color: var(--c-onBase);
+  border-radius: var(--radius); box-shadow: var(--shadow); white-space: nowrap;
+  transition: background-color 0.35s ease;
+}
+.mn-label { font-size: calc(16 * var(--u)); font-weight: var(--w-strong); letter-spacing: 1px; text-transform: uppercase; color: var(--c-onBase-72); }
+.mn-time { font-size: calc(34 * var(--u)); line-height: 1; }
+.gfx-minuteur[data-style=grand] .mn-box {
+  flex-direction: column; align-items: center; justify-content: center; gap: calc(6 * var(--u));
+  height: auto; padding: calc(20 * var(--u)) calc(44 * var(--u)) calc(24 * var(--u));
+}
+.gfx-minuteur[data-style=grand] .mn-label { font-size: calc(22 * var(--u)); }
+.gfx-minuteur[data-style=grand] .mn-time { font-size: calc(120 * var(--u)); }
+/* the last seconds, then zero and overtime */
+.gfx-minuteur[data-warn=on] .mn-box { background-color: var(--mn-warn); color: #111; }
+.gfx-minuteur[data-warn=on] .mn-label { color: rgba(0, 0, 0, 0.7); }
+.gfx-minuteur[data-alert=on] .mn-box { background-color: var(--mn-alert); color: #fff; }
+.gfx-minuteur[data-alert=on] .mn-label { color: rgba(255, 255, 255, 0.85); }
+.gfx-minuteur[data-alert=on][data-blink=on] .mn-time { animation: mnBlink 1s steps(1, end) infinite; }
+@keyframes mnBlink { 50% { opacity: 0.35; } }

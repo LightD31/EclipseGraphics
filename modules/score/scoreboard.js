@@ -38,6 +38,7 @@
 
   GFX.type('scoreboard', {
     label: 'Tableau de score', icon: '⚑',
+    move: { box: '.sb-pos' },
     desc: 'Le score du module « Tableau de score » : compact dans un coin, ou large avec les noms et les logos',
     schema: schema,
     create: function (ctx, f) {

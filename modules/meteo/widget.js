@@ -27,6 +27,7 @@
 
   GFX.type('meteo', {
     label: 'Météo', icon: '☀',
+    move: { box: '.mw-pos' },
     desc: 'Le temps qu\'il fait (module Météo) : icône, température, lieu, et les jours suivants',
     schema: schema,
     create: function (ctx, f) {

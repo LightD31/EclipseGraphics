@@ -112,6 +112,20 @@ h2 { font-family: var(--cond); font-size: 14px; font-weight: 800; letter-spacing
    behind an iframe whose scheme differs from its parent's (dark here) */
 #preview { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; pointer-events: none; color-scheme: normal; }
 #previewBar { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; font-size: 13px; color: var(--dim); }
+/* moving graphics in the preview: a layer over the (inert) page */
+#pvHit { position: absolute; inset: 0; z-index: 2; outline: none; touch-action: none; }
+.pv-hint { font-size: 12px; color: var(--faint); cursor: help; }
+#pvHit:focus-visible { box-shadow: inset 0 0 0 2px var(--sel); }
+.pv-box { position: absolute; pointer-events: none; border: 1px dashed rgba(255, 255, 255, 0.7); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); }
+.pv-box.sel { border: 2px solid var(--sel); }
+.pv-box.sel.locked { border: 2px dashed var(--warn); }
+.pv-guide { position: absolute; pointer-events: none; background: #ff3ea5; }
+.pv-guide.v { left: 50%; top: 0; bottom: 0; width: 1px; }
+.pv-guide.h { top: 50%; left: 0; right: 0; height: 1px; }
+.pv-tip {
+  position: absolute; pointer-events: none; padding: 3px 8px; border-radius: 3px; white-space: nowrap;
+  background: rgba(6, 10, 30, 0.92); color: #fff; font-size: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
 #previewBar select { font-size: 13px; padding: 3px 6px; }
 
 /* ===== Tabs ===== */

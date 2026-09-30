@@ -48,6 +48,7 @@
 
   GFX.type('ticker', {
     label: 'Défilant', icon: '⇆',
+    move: { box: '.tk-bar', kind: 'edge' },
     desc: 'Bande de messages qui défilent, un à un, ou en séries de segments',
     schema: schema,
     create: function (ctx, f) {

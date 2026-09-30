@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "showsDir": {
+      "type": "string",
+      "default": "shows",
+      "description": "Le dossier des projets (relatif au dossier du bundle)."
+    },
+    "dataDir": {
+      "type": "string",
+      "default": "data",
+      "description": "L'état de cette machine : réglages OBS et Companion, ce qui est à l'antenne dans chaque projet (relatif au dossier du bundle)."
+    },
+    "show": {
+      "type": "string",
+      "description": "Le projet à ouvrir au démarrage ; sans lui, le dernier ouvert."
+    },
+    "allowHosts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Les noms de machine acceptés par les adresses HTTP du bundle (commandes Companion…), en plus des adresses IP, de localhost et des noms en .local."
+    },
+    "modules": {
+      "type": "object",
+      "default": {},
+      "additionalProperties": { "type": "object" },
+      "description": "Les options des modules, par module : {\"a350f\": {\"every\": 5, \"watch\": \"39856b\", \"log\": \"flight-log\"}}."
+    }
+  }
+}

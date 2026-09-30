@@ -1,4 +1,6 @@
-/* Régie — the control panel.
+/* Régie — the control panel, a NodeCG dashboard panel of the bundle (the
+   "Régie" workspace; the rundown alone is the "À l'antenne" panel:
+   body.compact).
 
    Left, the rundown: every graphic of the show with its on/off button and
    the controls it needs on air (layouts, names, messages). Right, the
@@ -6,34 +8,37 @@
    graphic, the theme, the animations, the variables, the modules, the
    projects, this machine's settings.
 
-   Every edit is saved as you type (PUT /api/show, 250 ms after the last
-   keystroke) and reaches every output at once; "Annuler" steps back through
-   the last changes. Commands (on/off, layouts…) go through /api/cmd, the
-   same path as Companion. */
+   Every edit is saved as you type (message "show:save", 250 ms after the
+   last keystroke) and reaches every output at once; "Annuler" steps back
+   through the last changes. Commands (on/off, layouts…) go as the message
+   "cmd", the same path as Companion's. What the Régie shows comes from the
+   extension's Replicants (see extension/index.js). */
 (function () {
   'use strict';
   var U = window.GFXShared, T = window.GFXTheme, M = window.GFXMotion, GFX = window.GFX, h = Forms.h;
   function $(id) { return document.getElementById(id); }
   var PID = 'panel-' + Math.random().toString(36).slice(2, 10);
+  var COMPACT = document.body.classList.contains('compact');
+  var ncg = window.nodecg;
   var S = {
     name: '', show: null, rev: 0, live: null, vars: {}, media: [], shows: [], settings: null, status: null,
     modules: [], offset: 0, sel: null, tab: 'edit', connected: false
   };
   try { S.sel = localStorage.getItem('regie.sel'); S.tab = localStorage.getItem('regie.tab') || 'edit'; } catch (e) { /* private mode */ }
 
-  // ===== Server =====
-  function api(method, path, body) {
-    return fetch(path, {
-      method: method, cache: 'no-store',
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.status = r.status; e.body = j; throw e; }
-        return j;
-      });
+  // ===== Server: the bundle's extension, through NodeCG =====
+  /* A message to the extension → its answer; refused ({ ok: false }): an
+     error with the answer as e.body */
+  function msg(name, data) {
+    return ncg.sendMessage(name, data).then(function (j) {
+      j = j || {};
+      if (j.ok === false) { var e = new Error(j.error || 'refusé'); e.body = j; throw e; }
+      return j;
     });
   }
+  /* An address of the bundle, whole (for Companion, OBS): the pages' base
+     is the bundle's folder, /bundles/<bundle>/ */
+  function abs(path) { return new URL(path, document.baseURI).href; }
   var toastTimer = 0;
   function toast(msg, err) {
     var t = $('toast');
@@ -43,7 +48,7 @@
     toastTimer = setTimeout(function () { t.className = ''; }, err ? 4000 : 2000);
   }
   function cmd(target, c, text) {
-    return api('POST', 'api/cmd?from=panel', { target: target, cmd: c, text: text })
+    return msg('cmd', { target: target, cmd: c, text: text, from: 'panel' })
       .catch(function (e) { toast(e.message, true); });
   }
 
@@ -63,11 +68,11 @@
   function save() {
     if (saving) { again = true; return; }
     saving = true;
-    api('PUT', 'api/show', { rev: S.rev, config: S.show, by: PID }).then(function (j) {
+    msg('show:save', { rev: S.rev, config: S.show, by: PID }).then(function (j) {
       S.rev = j.rev;
       stable = JSON.stringify(S.show);
     }, function (e) {
-      if (e.status === 409 && e.body && e.body.config) {
+      if (e.body && e.body.conflict && e.body.config) {
         S.show = e.body.config; S.rev = e.body.rev; stable = JSON.stringify(S.show);
         toast('Projet modifié ailleurs : rechargé', true);
         renderAll();
@@ -93,58 +98,78 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !typing) { e.preventDefault(); $('bUndo').click(); }
   });
 
-  // ===== Event stream =====
-  var es = null;
+  // ===== What the extension publishes =====
+  /* Its Replicants, all read before the first drawing; then each change as
+     it comes. What is read is copied, never written: every change goes
+     through a message, and the extension publishes the result. */
   function connect() {
-    es = new EventSource('api/events?role=panel&id=' + PID);
-    es.addEventListener('hello', function (e) {
-      var d = JSON.parse(e.data);
+    var R = {};
+    ['catalog', 'show', 'live', 'vars', 'media', 'shows', 'settings', 'status'].forEach(function (n) { R[n] = ncg.Replicant(n); });
+    NodeCG.waitForReplicants(R.catalog, R.show, R.live, R.vars, R.media, R.shows, R.settings, R.status).then(function () {
+      var c = R.catalog.value || {}, sh = R.show.value || {};
       S.connected = true;
-      S.offset = d.serverTime - Date.now();
-      S.name = d.show.name; S.show = d.show.config; S.rev = d.show.rev; stable = JSON.stringify(S.show);
-      S.live = d.live; S.vars = d.vars || {}; S.media = d.media || []; S.shows = d.shows || [];
-      S.settings = d.settings; S.status = d.status; S.modules = d.modules || []; S.modTypes = d.modTypes || {};
+      S.modules = c.modules || []; S.modTypes = c.modTypes || {};
+      S.name = sh.name; S.show = U.clone(sh.config); S.rev = sh.rev; stable = JSON.stringify(S.show);
+      S.live = U.clone(R.live.value); S.vars = U.clone(R.vars.value) || {}; S.media = U.clone(R.media.value) || [];
+      S.shows = U.clone(R.shows.value) || []; S.settings = U.clone(R.settings.value); S.status = U.clone(R.status.value);
       $('offline').hidden = true;
       T.useUploaded(S.media);
       loadModules().then(renderAll);
-    });
-    es.addEventListener('show', function (e) {
-      var d = JSON.parse(e.data);
-      if (d.by === PID) return;
-      var switched = d.name !== S.name;
-      S.name = d.name; S.show = d.config; S.rev = d.rev; stable = JSON.stringify(S.show);
-      if (switched) { undo = []; $('bUndo').disabled = true; }
-      if (editing() && !switched) { pendingRender = true; renderRundown(); return; }
-      renderAll();
-    });
-    es.addEventListener('live', function (e) {
-      S.live = JSON.parse(e.data).live;
-      updateRundown();
-      if (S.tab === 'vars') refreshVarValues();
-      if (S.tab === 'modules') refreshModules();
-    });
-    es.addEventListener('vars', function (e) {
-      var d = JSON.parse(e.data);
-      if (d.reset) S.vars = {}; else S.vars[d.m] = Object.assign(S.vars[d.m] || {}, d.v);
-      if (S.tab === 'vars') refreshVarValues();
-      if (S.tab === 'modules') refreshModules();
-      refreshRdMods();
-    });
-    es.addEventListener('mod', function (e) {
-      var d = JSON.parse(e.data);
-      rdMods.concat(modViews).forEach(function (v) {
-        if (v.id === d.m && v.ctl.onEvent) try { v.ctl.onEvent(d.event, d.data); } catch (err) { console.error(d.m, err); }
+      R.show.on('change', function (d) {
+        if (!d || !d.config || d.by === PID || (d.name === S.name && d.rev === S.rev)) return;
+        var switched = d.name !== S.name;
+        S.name = d.name; S.show = U.clone(d.config); S.rev = d.rev; stable = JSON.stringify(S.show);
+        if (switched) { undo = []; $('bUndo').disabled = true; }
+        if (editing() && !switched) { pendingRender = true; renderRundown(); return; }
+        renderAll();
+      });
+      R.live.on('change', function (v) {
+        if (!v) return;
+        S.live = U.clone(v);
+        updateRundown();
+        if (S.tab === 'vars') refreshVarValues();
+        if (S.tab === 'modules') refreshModules();
+      });
+      R.vars.on('change', function (v) {
+        S.vars = U.clone(v) || {};
+        if (S.tab === 'vars') refreshVarValues();
+        if (S.tab === 'modules') refreshModules();
+        refreshRdMods();
+      });
+      R.shows.on('change', function (v) { S.shows = U.clone(v) || []; renderHeader(); if (S.tab === 'shows' && !editing()) renderTab(); });
+      R.media.on('change', function (v) {
+        var was = JSON.stringify(S.media);
+        S.media = U.clone(v) || [];
+        if (JSON.stringify(S.media) === was) return;
+        T.useUploaded(S.media);
+        if (S.tab === 'settings') renderTab();
+      });
+      R.settings.on('change', function (v) { S.settings = U.clone(v); renderPills(); });
+      R.status.on('change', function (v) {
+        S.status = U.clone(v);
+        renderPills();
+        if (S.tab === 'settings') refreshSettings();
       });
     });
-    es.addEventListener('shows', function (e) { S.shows = JSON.parse(e.data).shows; renderHeader(); if (S.tab === 'shows') renderTab(); });
-    es.addEventListener('media', function (e) { S.media = JSON.parse(e.data).media; T.useUploaded(S.media); if (S.tab === 'settings') renderTab(); });
-    es.addEventListener('settings', function (e) { S.settings = JSON.parse(e.data).settings; renderPills(); });
-    es.addEventListener('status', function (e) {
-      var d = JSON.parse(e.data);
-      S.status = Object.assign(S.status || {}, d);
-      renderPills();
+    ncg.listenFor('mod', function (d) {
+      rdMods.concat(modViews).forEach(function (v) {
+        if (d && v.id === d.m && v.ctl.onEvent) try { v.ctl.onEvent(d.event, d.data); } catch (err) { console.error(d.m, err); }
+      });
     });
-    es.onerror = function () { S.connected = false; $('offline').hidden = false; renderPills(); };
+    /* the dashboard's link to NodeCG (panels share it) */
+    if (ncg.socket && ncg.socket.on) {
+      ncg.socket.on('disconnect', function () { S.connected = false; $('offline').hidden = false; renderPills(); });
+      ncg.socket.on('connect', function () { S.connected = true; $('offline').hidden = true; renderPills(); register(); });
+    }
+    register();
+    setInterval(register, 10000);
+  }
+  /* This Régie to the extension (the Réglages tab counts them), and the
+     extension's clock */
+  function register() {
+    var t0 = Date.now();
+    msg('client', { id: PID, role: 'panel', socket: ncg.socket ? ncg.socket.id : '', ua: navigator.userAgent.slice(0, 120) })
+      .then(function (j) { S.offset = j.now - (t0 + Date.now()) / 2; }).catch(function () { /* the next one */ });
   }
   /* A change from elsewhere while the operator types here waits for the field
      to be left, so it doesn't pull the text from under the cursor */
@@ -156,7 +181,6 @@
   document.addEventListener('focusout', function () {
     setTimeout(function () { if (pendingRender && !editing()) { pendingRender = false; renderAll(); } }, 50);
   });
-  setInterval(function () { api('GET', 'api/status').then(function (s) { S.status = s; renderPills(); if (S.tab === 'settings') refreshSettings(); }).catch(function () {}); }, 5000);
 
   // ===== Module descriptors (the same files the outputs load) =====
   var loaded = {};
@@ -271,11 +295,23 @@
       }
     };
   }
+  /* Into the media library: NodeCG's assets of the bundle ("Médias de
+     l'habillage", also on NodeCG's Assets page), under a name that is safe
+     in an address and doesn't replace another file */
+  var MEDIA_EXT = /\.(png|jpe?g|gif|webp|svg|woff2?|ttf|otf|webm|mp4|csv|json|xml|rss|txt)$/i;
+  function assetsUrl(name) { return '/assets/' + encodeURIComponent(ncg.bundleName) + '/media' + (name ? '/' + encodeURIComponent(name) : ''); }
   function upload(file) {
-    toast('Envoi de ' + file.name + '…');
-    return fetch('api/media?name=' + encodeURIComponent(file.name), { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' } })
-      .then(function (r) { return r.json(); })
-      .then(function (j) { if (!j.ok) throw new Error(j.error); toast(j.name + ' importé'); return j.name; })
+    var name = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '-').replace(/^[.-]+/, '').slice(-80);
+    if (!MEDIA_EXT.test(name)) { toast('Import impossible : type de fichier non pris en charge', true); return Promise.resolve(null); }
+    var taken = {};
+    S.media.forEach(function (m) { taken[m.name] = true; });
+    var stem = name.replace(/\.[^.]+$/, ''), ext = name.slice(stem.length);
+    for (var i = 2; taken[name]; i++) name = stem + '-' + i + ext;
+    var fd = new FormData();
+    fd.append('file', new File([file], name, { type: file.type }));
+    toast('Envoi de ' + name + '…');
+    return fetch(assetsUrl(), { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); toast(name + ' importé'); return name; })
       .catch(function (e) { toast('Import impossible : ' + e.message, true); return null; });
   }
   function copy(text) {
@@ -305,7 +341,7 @@
     if (onAir && !confirm('Des graphiques sont à l\'antenne : ils seront remplacés par ceux du projet « ' + name + ' ». Continuer ?')) {
       $('showPick').value = S.name; return;
     }
-    api('POST', 'api/shows', { action: 'activate', name: name }).then(function () { toast('Projet ouvert : ' + name); },
+    msg('shows', { action: 'activate', name: name }).then(function () { toast('Projet ouvert : ' + name); },
       function (e) { toast(e.message, true); $('showPick').value = S.name; });
   });
   $('bAllOff').addEventListener('click', function () { cmd('all', 'all.off'); });
@@ -331,7 +367,8 @@
     try { pv.contentWindow.postMessage({ gfxPreview: want }, location.origin); } catch (e) { /* not loaded yet */ }
   }
   pv.addEventListener('load', function () { previewScale(); setTimeout(previewForce, 300); });
-  pv.src = 'overlay.html?preview=1';
+  /* the rundown alone runs no preview (one output page less) */
+  if (!COMPACT) pv.src = 'graphics/overlay.html?preview=1';
   $('pvMode').addEventListener('change', previewForce);
   var bgPref = 'photo';
   try { bgPref = localStorage.getItem('regie.pvbg') || 'photo'; } catch (e) { /* ignore */ }
@@ -838,7 +875,7 @@
     viewsOf(g).forEach(function (v) { list.push([v.name + '.toggle', v.label]); });
     if (g.type === 'synthe') list = list.concat([['take.2', 'afficher le 2e nom'], ['entry.next', 'nom suivant'], ['entry.prev', 'nom précédent']]);
     if (g.type === 'flash') list = list.concat([['banner.<texte>', 'envoyer un message'], ['preset.1', 'envoyer le message prêt n° 1'], ['banner.next', 'passer'], ['banner.clear', 'vider la file']]);
-    var base = location.origin + '/api/cmd/' + g.id + '/';
+    var base = abs('api/cmd/' + g.id + '/');
     var tb = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Commande' }), h('th', { text: 'Effet' }), h('th', { text: 'Companion (HTTP GET)' })])]);
     list.forEach(function (c) {
       tb.appendChild(h('tr', {}, [h('td', {}, [h('code', { text: c[0] })]), h('td', { text: c[1] }),
@@ -846,7 +883,7 @@
     });
     return h('details', { class: 'fm-sec' }, [h('summary', { text: 'Commandes (Companion, OBS)' }), h('div', { class: 'fm-sec-body' }, [
       h('p', { class: 'note' }, ['Companion : module « Generic HTTP », requête GET sur ', h('code', { text: base + '<commande>' }),
-        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + g.id + ':air.toggle"}' }), '. ' + def.label + ' : ' + g.id]),
+        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + g.id + ':air.toggle"}' }), '. ' + def.label + ' : ' + g.id + loginNote()]),
       tb])]);
   }
 
@@ -1103,7 +1140,7 @@
     });
     el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Variables libres' }),
       h('p', { class: 'note' }, ['Des valeurs à vous (score, invité, sujet…), changées ici ou depuis Companion : ',
-        h('code', { text: location.origin + '/api/cmd/var/score.+1' }), ' ou ', h('code', { text: '…/var/score?text=3' }), '.']),
+        h('code', { text: abs('api/cmd/var/score.+1') }), ' ou ', h('code', { text: '…/var/score?text=3' }), '.' + loginNote()]),
       tb, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: '+ Nouvelle variable', onclick: function () {
         var n = 'variable', k = 2;
         while (vars.some(function (x) { return x.name === n; })) n = 'variable_' + k++;
@@ -1184,7 +1221,7 @@
      for its <…> part]] (or a function of the settings, for commands named
      after what the operator created: a timer's id…) */
   function moduleCommandsHelp(id, list) {
-    var base = location.origin + '/api/cmd/' + id + '/';
+    var base = abs('api/cmd/' + id + '/');
     var tb = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Commande' }), h('th', { text: 'Effet' }), h('th', { text: 'Companion (HTTP GET)' })])]);
     list.forEach(function (c) {
       var url = base + c[0].replace(/<[^>]*>/g, c[2] || 'Texte');
@@ -1193,7 +1230,7 @@
     });
     return h('details', { class: 'fm-sec' }, [h('summary', { text: 'Commandes (Companion, OBS)' }), h('div', { class: 'fm-sec-body' }, [
       h('p', { class: 'note' }, ['Companion : module « Generic HTTP », requête GET sur ', h('code', { text: base + '<commande>' }),
-        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + id + ':<commande>"}' }), '.']), tb])]);
+        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + id + ':<commande>"}' }), '.' + loginNote()]), tb])]);
   }
   function refreshModules() {
     modViews.forEach(function (v) { if (v.ctl.refresh) try { v.ctl.refresh(); } catch (e) { console.error(e); } });
@@ -1216,7 +1253,7 @@
         changed();
         if (S.tab === 'modules') renderTab();
       },
-      status: function () { return api('GET', 'api/modules/' + id + '/status'); },
+      status: function () { return msg('mod:status', { m: id }).then(function (j) { return j.status || {}; }); },
       tz: tz, now: now, log: function () { return (S.status && S.status.log) || []; }
     };
   }
@@ -1244,16 +1281,16 @@
       else acts.appendChild(h('b', { text: 'actif ' }));
       acts.appendChild(h('button', { class: 'fm-mini', text: 'Dupliquer', onclick: function () {
         var n = prompt('Nom du nouveau projet (lettres, chiffres, _) :', s.name + '_copie');
-        if (n) api('POST', 'api/shows', { action: 'duplicate', from: s.name, name: n, title: s.title + ' (copie)' }).then(function () { toast('Projet créé'); }, function (e) { toast(e.message, true); });
+        if (n) msg('shows', { action: 'duplicate', from: s.name, name: n, title: s.title + ' (copie)' }).then(function () { toast('Projet créé'); }, function (e) { toast(e.message, true); });
       } }));
       acts.appendChild(h('button', { class: 'fm-mini', text: 'Renommer', onclick: function () {
         var n = prompt('Nouveau nom de fichier :', s.name);
-        if (n && n !== s.name) api('POST', 'api/shows', { action: 'rename', from: s.name, name: n }).then(function () { toast('Renommé'); }, function (e) { toast(e.message, true); });
+        if (n && n !== s.name) msg('shows', { action: 'rename', from: s.name, name: n }).then(function () { toast('Renommé'); }, function (e) { toast(e.message, true); });
       } }));
       acts.appendChild(h('a', { class: 'fm-mini', href: 'api/shows/' + s.name + '?download', text: ' exporter ' }));
       if (s.name !== S.name) acts.appendChild(h('button', { class: 'fm-mini', text: '✕', title: 'Supprimer', onclick: function () {
         if (confirm('Supprimer le projet « ' + s.title + ' » ? (le fichier est renommé en .deleted)'))
-          api('POST', 'api/shows', { action: 'delete', name: s.name }).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
+          msg('shows', { action: 'delete', name: s.name }).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
       } }));
       tb.appendChild(h('tr', {}, [h('td', { text: s.title }), h('td', {}, [h('code', { text: s.name })]),
         h('td', { text: new Date(s.mtime).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }), acts]));
@@ -1269,13 +1306,13 @@
       file.text().then(function (txt) {
         var cfg = JSON.parse(txt), n = prompt('Nom du projet importé :', U.slug(file.name.replace(/\.json$/i, '')));
         if (!n) return;
-        return api('POST', 'api/shows', { action: 'import', name: n, config: cfg }).then(function () { toast('Projet importé'); });
+        return msg('shows', { action: 'import', name: n, config: cfg }).then(function () { toast('Projet importé'); });
       }).catch(function (e) { toast('Import impossible : ' + e.message, true); });
     });
     el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Projets' }), tb,
       h('div', { class: 'bar', style: 'margin-top:10px' }, [nn, nt, from, h('button', { class: 'small red', text: 'Créer', onclick: function () {
         if (!U.slug(nn.value)) return toast('Donnez un nom de fichier', true);
-        api('POST', 'api/shows', { action: from.value ? 'duplicate' : 'create', from: from.value, name: nn.value, title: nt.value || nn.value })
+        msg('shows', { action: from.value ? 'duplicate' : 'create', from: from.value, name: nn.value, title: nt.value || nn.value })
           .then(function () { toast('Projet créé : ouvrez-le dans la liste'); }, function (e) { toast(e.message, true); });
       } }), h('button', { class: 'small', text: 'Importer un fichier…', onclick: function () { imp.click(); } }), imp])]));
   }
@@ -1283,7 +1320,7 @@
   // ===== Settings =====
   var setRefs = {};
   function renderSettings(el) {
-    var base = location.origin + '/overlay.html';
+    var base = abs('graphics/overlay.html');
     var urls = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Source navigateur' }), h('th', { text: 'URL' }), h('th')])]);
     var addUrl = function (label, url) {
       urls.appendChild(h('tr', {}, [h('td', { text: label }), h('td', {}, [h('code', { text: url })]), h('td', {}, [h('button', { class: 'fm-mini', text: 'copier', onclick: function () { copy(url); } })])]));
@@ -1291,7 +1328,8 @@
     addUrl('Tous les graphiques', base);
     S.show.graphics.forEach(function (g) { addUrl(g.name, base + '?only=' + g.id); });
     el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Sorties OBS' }),
-      h('p', { class: 'note', text: 'Dans OBS : Source → Navigateur, 1920 × 1080, l\'URL ci-dessous. Une source pour tout, ou une par graphique pour les placer dans des scènes différentes. Les graphiques entrent avec leur animation quand la scène passe à l\'antenne (?noautoanim pour l\'empêcher).' }),
+      h('p', { class: 'note', text: 'Dans OBS : Source → Navigateur, 1920 × 1080, l\'URL ci-dessous. Une source pour tout, ou une par graphique pour les placer dans des scènes différentes. Les graphiques entrent avec leur animation quand la scène passe à l\'antenne (?noautoanim pour l\'empêcher).' +
+        (loginNote() ? ' Avec la connexion NodeCG, prenez l\'URL dans son onglet Graphics : elle porte votre clé.' : '') }),
       urls, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: 'Recharger toutes les sorties', onclick: function () { cmd('all', 'reload'); } })])]));
     var st = S.settings || { obs: {}, companion: {} };
     var oe = h('input', { type: 'checkbox', checked: !!st.obs.enabled }), oh = h('input', { type: 'text', value: st.obs.host || '127.0.0.1' });
@@ -1301,7 +1339,7 @@
       h('p', { class: 'note', text: 'Pour les boutons Companion « OBS → Broadcast Custom Event » : {"gfx": "bandeau:air.toggle"}, ou les anciens {"eclipse": "…"} et {"a350f": "…"}. Le serveur écoute OBS une seule fois pour toutes les sorties.' }),
       h('div', { class: 'row' }, [h('label', { class: 'fm-switch' }, [oe, h('span')]), h('span', { text: 'activer' }), oh, op, opw,
         h('button', { class: 'small red', text: 'Enregistrer', onclick: function () {
-          api('PUT', 'api/settings', { obs: { enabled: oe.checked, host: oh.value, port: +op.value, password: opw.value } }).then(function () { toast('Lien OBS enregistré'); }, function (e) { toast(e.message, true); });
+          msg('settings:save', { obs: { enabled: oe.checked, host: oh.value, port: +op.value, password: opw.value } }).then(function () { toast('Lien OBS enregistré'); }, function (e) { toast(e.message, true); });
         } }), setRefs.obs])]));
     var ce = h('input', { type: 'checkbox', checked: !!st.companion.enabled }), ch = h('input', { type: 'text', value: st.companion.host || '127.0.0.1:8000' });
     var cp = h('input', { type: 'text', value: st.companion.prefix || 'gfx', style: 'width:90px' });
@@ -1310,7 +1348,7 @@
       h('p', { class: 'note', text: 'Le serveur pousse l\'état dans des variables personnalisées de Companion (à créer dans Companion) : <préfixe>_<graphique>_air, les variables libres, et celles des modules (eclipse_*, a350f_*… comme avant).' }),
       h('div', { class: 'row' }, [h('label', { class: 'fm-switch' }, [ce, h('span')]), h('span', { text: 'activer' }), ch, h('span', { class: 'fm-unit', text: 'préfixe' }), cp,
         h('button', { class: 'small red', text: 'Enregistrer et tout renvoyer', onclick: function () {
-          api('PUT', 'api/settings', { companion: { enabled: ce.checked, host: ch.value, prefix: cp.value } }).then(function () { toast('Companion enregistré'); }, function (e) { toast(e.message, true); });
+          msg('settings:save', { companion: { enabled: ce.checked, host: ch.value, prefix: cp.value } }).then(function () { toast('Companion enregistré'); }, function (e) { toast(e.message, true); });
         } }), setRefs.comp])]));
     // media
     var mt = h('table', { class: 't' }, [h('tr', {}, ['', 'Fichier', 'Type', 'Taille', ''].map(function (x) { return h('th', { text: x }); }))]);
@@ -1318,13 +1356,17 @@
       mt.appendChild(h('tr', {}, [h('td', {}, [m.kind === 'image' ? h('img', { src: m.url, style: 'height:28px;max-width:80px;object-fit:contain', alt: '' }) : null]),
         h('td', {}, [h('code', { text: m.name })]), h('td', { text: { image: 'image', font: 'police', video: 'vidéo', data: 'données' }[m.kind] }),
         h('td', { text: (m.size / 1024).toFixed(0) + ' Kio' }),
-        h('td', {}, [h('button', { class: 'fm-mini', text: '✕', onclick: function () {
-          if (confirm('Supprimer ' + m.name + ' ?')) api('DELETE', 'api/media/' + encodeURIComponent(m.name)).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
+        h('td', {}, [m.builtin ? h('span', { class: 'fm-unit', text: 'exemple', title: 'Livré avec le bundle (dossier media/)' }) : h('button', { class: 'fm-mini', text: '✕', onclick: function () {
+          if (!confirm('Supprimer ' + m.name + ' ?')) return;
+          fetch(assetsUrl(m.name), { method: 'DELETE', credentials: 'same-origin' }).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            toast('Supprimé');
+          }).catch(function (e) { toast(e.message, true); });
         } })])]));
     });
     var mf = h('input', { type: 'file', multiple: true, hidden: true });
     mf.addEventListener('change', function () { [].forEach.call(mf.files, function (f) { upload(f); }); });
-    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé), polices, et fichiers de données (CSV, JSON, RSS, texte) que le module « Flux de données » peut lire (/media/nom.csv) — dans le dossier media/.' }),
+    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé), polices, et fichiers de données (CSV, JSON, RSS, texte) que le module « Flux de données » peut lire (/media/nom.csv). Ils sont rangés dans les assets de NodeCG (catégorie « Médias de l\'habillage », aussi dans son onglet Assets) ; les exemples viennent avec le bundle.' }),
       mt, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: 'Importer des fichiers…', onclick: function () { mf.click(); } }), mf])]));
     setRefs.server = h('div');
     setRefs.log = h('pre', { class: 'log' });
@@ -1338,7 +1380,7 @@
     if (setRefs.comp) setRefs.comp.textContent = 'état : ' + (s.companion.state || '—') + ' · ' + (s.companion.sent || 0) + ' envois' + (s.companion.error ? ' (' + s.companion.error + ')' : '');
     var outs = s.clients.filter(function (c) { return c.role === 'output'; });
     setRefs.server.innerHTML = '';
-    setRefs.server.appendChild(h('p', { class: 'note', text: 'Version ' + s.version + ' · démarré ' + new Date(s.boot).toLocaleString('fr-FR') + ' · ' +
+    setRefs.server.appendChild(h('p', { class: 'note', text: 'Version ' + s.version + ' (bundle NodeCG ' + s.bundle + ') · démarré ' + new Date(s.boot).toLocaleString('fr-FR') + ' · ' +
       outs.length + ' sortie' + (outs.length > 1 ? 's' : '') + ' connectée' + (outs.length > 1 ? 's' : '') + ' · ' +
       (s.clients.length - outs.length) + ' régie' + (s.clients.length - outs.length > 1 ? 's' : '') +
       (Object.keys(s.leaders || {}).length ? ' · modules calculés par : ' + Object.keys(s.leaders).map(function (m) { return m + ' → ' + s.leaders[m]; }).join(', ') : '') }));
@@ -1349,6 +1391,12 @@
     });
   }
 
-  $('outLink').href = 'overlay.html';
+  /* With NodeCG's login on, an address given to Companion needs the user's key */
+  function loginNote() {
+    var c = ncg.config || {};
+    return c.login && c.login.enabled ? ' Connexion NodeCG active : ajoutez ?key=<votre clé> aux adresses.' : '';
+  }
+
+  $('outLink').href = 'graphics/overlay.html';
   connect();
 })();

@@ -4,9 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Régie · habillage</title>
-<!-- The operator's page, never on air: http://127.0.0.1:8787/panel.html
-     (also works as an OBS custom browser dock). Everything is saved as you
-     type and shows on the outputs at once. -->
+<!-- The operator's page, never on air: the "Régie" workspace of the NodeCG
+     dashboard (http://127.0.0.1:9090/dashboard/), or on its own at
+     /bundles/EclipseGraphics/dashboard/regie.html?standalone=true (an OBS
+     custom browser dock). Everything is saved as you type and shows on the
+     outputs at once. The base makes every path below the bundle's. -->
+<base href="../">
 <link rel="stylesheet" href="engine/fonts/fonts.css">
 <link rel="stylesheet" href="engine/panel/panel.css">
 </head>
@@ -49,7 +52,7 @@
         <button id="bReplay" class="small ghost" title="Rejoue l'entrée du graphique sélectionné dans l'aperçu">▶ Rejouer l'entrée</button>
         <span class="pv-hint" title="Cliquez un graphique dans l'aperçu pour le choisir ; glissez-le pour le placer ; flèches : 1 px, Maj : 10 px">✥ glissez un graphique pour le déplacer</span>
         <span class="sp"></span>
-        <a id="outLink" href="overlay.html" target="_blank" rel="noopener">ouvrir la sortie ↗</a>
+        <a id="outLink" href="graphics/overlay.html" target="_blank" rel="noopener">ouvrir la sortie ↗</a>
       </div>
     </div>
     <nav id="tabs">

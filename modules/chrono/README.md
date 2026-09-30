@@ -28,8 +28,8 @@ Each timer gets its buttons in the rundown: start / stop, reset, −1 min, −10
 
 ## Commands
 
-Sent to `chrono` — HTTP `GET /api/cmd/chrono/<id>.<verb>`, or `{"gfx": "chrono:<id>.<verb>"}`
-as an OBS custom event:
+Sent to `chrono` — HTTP `GET /bundles/EclipseGraphics/api/cmd/chrono/<id>.<verb>`, or
+`{"gfx": "chrono:<id>.<verb>"}` as an OBS custom event:
 
 | Command | |
 |---|---|

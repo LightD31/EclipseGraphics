@@ -76,7 +76,7 @@ exports.init = function (ctx) {
   function later(channel) {
     S.retry = Math.min(60000, Math.max(2000, S.retry * 2));
     clearTimeout(S.timer);
-    S.timer = setTimeout(() => { const s = ctx.settings(); if (s && chan(s) === channel) connect(channel); }, S.retry);
+    S.timer = setTimeout(ctx.guard(() => { const s = ctx.settings(); if (s && chan(s) === channel) connect(channel); }), S.retry);
   }
   function chan(s) { return String(s.channel || '').trim().toLowerCase().replace(/^#/, '').replace(/[^a-z0-9_]/g, ''); }
 
@@ -176,10 +176,10 @@ exports.init = function (ctx) {
         ctx.setVars({ questions: String(S.questions.length) });
         const g = chatGraphic();
         if (g) {
-          setTimeout(() => ctx.command(g, 'air.on'), 0);
+          setTimeout(ctx.guard(() => ctx.command(g, 'air.on')), 0);
           clearTimeout(S.outTimer);
           const secs = +c.settings.autoOut;
-          if (secs > 0) { const id = msg.id; S.outTimer = setTimeout(() => { const st = ctx.state(); if (st && st.featured && st.featured.id === id) ctx.command(g, 'air.off'); }, secs * 1000); }
+          if (secs > 0) { const id = msg.id; S.outTimer = setTimeout(ctx.guard(() => { const st = ctx.state(); if (st && st.featured && st.featured.id === id) ctx.command(g, 'air.off'); }), secs * 1000); }
         }
       },
       hide() { offAir(); },

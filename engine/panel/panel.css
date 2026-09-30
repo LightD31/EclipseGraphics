@@ -8,9 +8,10 @@
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { color-scheme: dark; }
+/* (over the defaults NodeCG gives its panels: a margin, its fonts) */
 body {
   font-family: 'Inter', 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.35;
-  background: var(--bg); color: #fff; min-height: 100vh;
+  background: var(--bg); color: #fff; min-height: 100vh; margin: 0;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button {
@@ -272,3 +273,13 @@ table.mo-t td > * + * { margin-left: 4px; }
 table.mo-t select { width: auto; max-width: 185px; }
 table.mo-t input[type=number] { width: 64px; }
 table.mo-t tr.mod td:first-child { color: var(--sel); font-weight: 700; }
+
+/* ===== « À l'antenne »: the rundown alone, a panel of NodeCG's main workspace ===== */
+body.compact { min-height: 0; background: var(--panel-2); }
+body.compact #top { position: static; padding: 6px 10px; gap: 8px; border-bottom-width: 2px; }
+body.compact #top h1, body.compact #showPick, body.compact .pill, body.compact #bUndo, body.compact #bAdd { display: none; }
+body.compact #clock { font-size: 18px; }
+body.compact #offline { position: static; }
+body.compact #app { display: block; }
+body.compact #work { display: none; }
+body.compact #rundown { position: static; max-height: none; border-right: 0; padding: 8px 8px 12px; }

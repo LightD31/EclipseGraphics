@@ -3,8 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <title>Habillage · sortie</title>
-<!-- The OBS browser source: 1920×1080, transparent. Everything on it comes
-     from the server (node server.js) and is edited in panel.html. -->
+<!-- The OBS browser source: 1920×1080, transparent, served by NodeCG at
+     /bundles/EclipseGraphics/graphics/overlay.html (NodeCG adds its API,
+     window.nodecg, before the scripts below). Everything on it comes from
+     the bundle's extension and is edited in the Régie. The base makes every
+     path below the bundle's (engine/, modules/, media/). -->
+<base href="../">
 <link rel="stylesheet" href="engine/fonts/fonts.css">
 <link rel="stylesheet" href="engine/output.css">
 <link rel="stylesheet" href="engine/graphics/bandeau.css">

@@ -73,7 +73,7 @@ exports.init = function (ctx) {
     const st = ctx.state(), ids = timers(ctx.settings(), U).map(t => t.id);
     if (st && st.t) for (const id of Object.keys(st.t)) if (!ids.includes(id)) delete st.t[id];
     tick();
-    loop = setInterval(tick, 100);
+    loop = setInterval(ctx.guard(tick), 100);
   }
 
   function run(t, e, verb, arg, text, now) {

@@ -1,0 +1,54 @@
+{
+  "name": "EclipseGraphics",
+  "version": "2.0.0",
+  "description": "Habillage d'antenne pour OBS, modulable depuis une régie en français : un bundle NodeCG (graphiques, thèmes, animations, modules de données).",
+  "private": true,
+  "homepage": "https://github.com/LightD31/EclipseGraphics",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LightD31/EclipseGraphics.git"
+  },
+  "scripts": {
+    "start": "node start.js"
+  },
+  "devDependencies": {
+    "nodecg": "^2.8.0"
+  },
+  "nodecg": {
+    "compatibleRange": "^2.0.0",
+    "dashboardPanels": [
+      {
+        "name": "regie",
+        "title": "Régie",
+        "file": "regie.html",
+        "fullbleed": true
+      },
+      {
+        "name": "antenne",
+        "title": "À l'antenne",
+        "file": "antenne.html",
+        "width": 3,
+        "headerColor": "#10173a"
+      }
+    ],
+    "graphics": [
+      {
+        "file": "overlay.html",
+        "width": 1920,
+        "height": 1080,
+        "singleInstance": false
+      }
+    ],
+    "mount": [
+      { "directory": "engine", "endpoint": "engine" },
+      { "directory": "modules", "endpoint": "modules" }
+    ],
+    "assetCategories": [
+      {
+        "name": "media",
+        "title": "Médias de l'habillage",
+        "allowedTypes": ["png", "jpg", "jpeg", "gif", "webp", "svg", "woff2", "woff", "ttf", "otf", "webm", "mp4", "csv", "json", "xml", "rss", "txt"]
+      }
+    ]
+  }
+}

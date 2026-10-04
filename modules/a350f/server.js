@@ -1,10 +1,11 @@
 /* Module "a350f", server side: the relay the A350F overlay reads its ADS-B
-   data through (once a standalone script, now part of the overlay server).
+   data through (once a standalone script, now part of the bundle's
+   extension).
 
    The public ADS-B APIs (adsb.lol, adsb.fi) answer a server fine but send no
    CORS headers, so a browser source can't read them from its own page: the
-   server forwards /adsb/* to them from the same origin. Same routes, same
-   pacing, same recording as the standalone relay:
+   extension forwards /bundles/EclipseGraphics/adsb/* to them from the same
+   origin. Same routes, same pacing, same recording as the standalone relay:
 
      GET /adsb/hex/<icao24>      aircraft by transponder address
      GET /adsb/reg/<reg>         aircraft by registration
@@ -14,7 +15,7 @@
      GET /flight-log/<file>      a day's recording as written
 
    Going easy on the APIs: each upstream is asked about each watched aircraft
-   every --every seconds (5 by default; 15 while it isn't being seen), taking
+   every `every` seconds (5 by default; 15 while it isn't being seen), taking
    turns, so with both up the aircraft gets a fresh position every 2.5 s
    while each API sees one request every 5 s — however many pages poll. A
    lookup by registration or callsign goes upstream on its own, at most every
@@ -28,7 +29,8 @@
    trace of the aircraft.
 
    It only polls while the active show uses the module (and its relay is this
-   one), or for the aircraft given with --watch. */
+   one), or for the aircraft given in `watch`. Options: modules.a350f.every,
+   .watch, .log in the bundle's configuration (cfg/EclipseGraphics.json). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -248,7 +250,7 @@ exports.init = function (ctx) {
     w.followUpAt = Date.now() + 180000;
     backfill(hex, why);
   }
-  const loop = setInterval(() => {
+  const loop = setInterval(ctx.guard(() => {
     const t = Date.now();
     for (const [hex, w] of watched) {
       if (w.pending && t - w.lastBackfill >= 60000) backfill(hex, w.lastBackfill ? 'retry' : 'start');
@@ -263,13 +265,13 @@ exports.init = function (ctx) {
         if (gap > GAP_MS && gap !== Infinity && !e.gapSeen) { e.gapSeen = true; requestBackfill(hex, 'gap'); }
       }).catch(() => { if (!w.failSince) w.failSince = Date.now(); });
     }
-  }, 500);
-  const minute = setInterval(() => {
+  }), 500);
+  const minute = setInterval(ctx.guard(() => {
     for (const hex of watched.keys()) {
       const f = flight(hex), last = f.pts[f.pts.length - 1];
       log('log', 'a350f: ' + hex + ' ' + f.pts.length + ' points' + (last ? ', newest ' + Math.round((Date.now() - last._t) / 1000) + ' s ago' : ', not seen yet'));
     }
-  }, 60000);
+  }), 60000);
 
   const HIST_FIELDS = ['_t', 'lat', 'lon', 'alt_baro', 'alt_geom', 'gs', 'track', 'true_heading', 'baro_rate',
                        'geom_rate', 'flight', 'squawk', 'mach', 'ias', 'oat', '_src'];

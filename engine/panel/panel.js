@@ -1,4 +1,6 @@
-/* Régie — the control panel.
+/* Régie — the control panel, a NodeCG dashboard panel of the bundle (the
+   "Régie" workspace; the rundown alone is the "À l'antenne" panel:
+   body.compact).
 
    Left, the rundown: every graphic of the show with its on/off button and
    the controls it needs on air (layouts, names, messages). Right, the
@@ -6,85 +8,53 @@
    graphic, the theme, the animations, the variables, the modules, the
    projects, this machine's settings.
 
-   Every edit is saved as you type (PUT /api/show, 250 ms after the last
-   keystroke) and reaches every output at once; "Annuler" steps back through
-   the last changes. Commands (on/off, layouts…) go through /api/cmd, the
-   same path as Companion. */
+   Every edit is saved as you type (message "show:save", 250 ms after the
+   last keystroke) and reaches every output at once; "Annuler" steps back
+   through the last changes. Commands (on/off, layouts…) go as the message
+   "cmd", the same path as Companion's. What the Régie shows comes from the
+   extension's Replicants (see extension/index.js). */
 (function () {
   'use strict';
-  var U = window.GFXShared, T = window.GFXTheme, M = window.GFXMotion, GFX = window.GFX, h = Forms.h;
+  var U = window.GFXShared, T = window.GFXTheme, M = window.GFXMotion, GFX = window.GFX, h = Forms.h, L = window.GFXLink;
   function $(id) { return document.getElementById(id); }
   var PID = 'panel-' + Math.random().toString(36).slice(2, 10);
+  var COMPACT = document.body.classList.contains('compact');
+  var ncg = window.nodecg;
   var S = {
-    name: '', show: null, rev: 0, live: null, vars: {}, media: [], shows: [], settings: null, status: null,
+    name: '', show: null, live: null, vars: {}, media: [], shows: [], settings: null, status: null,
     modules: [], offset: 0, sel: null, tab: 'edit', connected: false
   };
   try { S.sel = localStorage.getItem('regie.sel'); S.tab = localStorage.getItem('regie.tab') || 'edit'; } catch (e) { /* private mode */ }
 
-  // ===== Server =====
-  function api(method, path, body) {
-    return fetch(path, {
-      method: method, cache: 'no-store',
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.status = r.status; e.body = j; throw e; }
-        return j;
-      });
-    });
-  }
-  var toastTimer = 0;
-  function toast(msg, err) {
-    var t = $('toast');
-    t.textContent = msg;
-    t.className = 'show' + (err ? ' err' : '');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.className = ''; }, err ? 4000 : 2000);
-  }
+  // ===== Server: the bundle's extension, through NodeCG (engine/panel/link.js) =====
+  var msg = L.msg, abs = L.abs, toast = L.toast, copy = L.copy, loginNote = L.loginNote;
   function cmd(target, c, text) {
-    return api('POST', 'api/cmd?from=panel', { target: target, cmd: c, text: text })
+    return msg('cmd', { target: target, cmd: c, text: text, from: 'panel' })
       .catch(function (e) { toast(e.message, true); });
   }
 
-  // ===== Saving, undo =====
-  var saveTimer = 0, saving = false, again = false, stable = null, undo = [], burstAt = 0;
+  // ===== The show, saved as it is edited =====
+  /* S.show is the editor's (L.Editor): the forms change it in place,
+     changed() sends what changed 250 ms later; another Régie's or a module
+     panel's changes come in without undoing the ones made here, and
+     « Annuler » only takes back this Régie's own */
+  var E = L.Editor({ by: PID, toast: toast, onRemote: fromElsewhere, onUndoState: function (can) { $('bUndo').disabled = !can; } });
+  function fromElsewhere(r) {
+    S.name = E.name; S.show = E.show;
+    if (r === 'load') { renderAll(); return; }
+    /* typing here: the drawing waits for the field to be left, unless what
+       is being edited was replaced as a whole */
+    if (editing() && !replaced(r)) { pendingRender = true; renderRundown(); return; }
+    renderAll();
+  }
+  var rdTimer = 0;
   function changed() {
-    var t = Date.now();
-    if (stable && t - burstAt > 1200) { undo.push(stable); if (undo.length > 60) undo.shift(); }
-    burstAt = t;
-    $('bUndo').disabled = !undo.length;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 250);
+    E.changed();
     clearTimeout(rdTimer);
     rdTimer = setTimeout(renderRundown, 300);
   }
-  var rdTimer = 0;
-  function save() {
-    if (saving) { again = true; return; }
-    saving = true;
-    api('PUT', 'api/show', { rev: S.rev, config: S.show, by: PID }).then(function (j) {
-      S.rev = j.rev;
-      stable = JSON.stringify(S.show);
-    }, function (e) {
-      if (e.status === 409 && e.body && e.body.config) {
-        S.show = e.body.config; S.rev = e.body.rev; stable = JSON.stringify(S.show);
-        toast('Projet modifié ailleurs : rechargé', true);
-        renderAll();
-      } else toast('Enregistrement impossible : ' + e.message, true);
-    }).then(function () {
-      saving = false;
-      if (again) { again = false; save(); }
-    });
-  }
   $('bUndo').addEventListener('click', function () {
-    var prev = undo.pop();
-    $('bUndo').disabled = !undo.length;
-    if (!prev) return;
-    S.show = JSON.parse(prev);
-    burstAt = 0;
-    clearTimeout(saveTimer);
-    save();
+    if (!E.undo()) return;
     renderAll();
     toast('Modification annulée');
   });
@@ -93,58 +63,63 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !typing) { e.preventDefault(); $('bUndo').click(); }
   });
 
-  // ===== Event stream =====
-  var es = null;
+  // ===== What the extension publishes =====
+  /* Its Replicants, all read before the first drawing; then each change as
+     it comes. What is read is copied, never written: every change goes
+     through a message, and the extension publishes the result. */
   function connect() {
-    es = new EventSource('api/events?role=panel&id=' + PID);
-    es.addEventListener('hello', function (e) {
-      var d = JSON.parse(e.data);
+    var c = L.connect(['catalog', 'show', 'live', 'vars', 'media', 'shows', 'settings', 'status', 'soundCues']), R = c.R;
+    c.ready.then(function () {
+      var cat = R.catalog.value || {};
       S.connected = true;
-      S.offset = d.serverTime - Date.now();
-      S.name = d.show.name; S.show = d.show.config; S.rev = d.show.rev; stable = JSON.stringify(S.show);
-      S.live = d.live; S.vars = d.vars || {}; S.media = d.media || []; S.shows = d.shows || [];
-      S.settings = d.settings; S.status = d.status; S.modules = d.modules || []; S.modTypes = d.modTypes || {};
+      S.modules = cat.modules || []; S.modTypes = cat.modTypes || {};
+      E.load(R.show.value); S.name = E.name; S.show = E.show;
+      S.live = U.clone(R.live.value); S.vars = U.clone(R.vars.value) || {}; S.media = U.clone(R.media.value) || [];
+      S.shows = U.clone(R.shows.value) || []; S.settings = U.clone(R.settings.value); S.status = U.clone(R.status.value);
       $('offline').hidden = true;
       T.useUploaded(S.media);
-      loadModules().then(renderAll);
-    });
-    es.addEventListener('show', function (e) {
-      var d = JSON.parse(e.data);
-      if (d.by === PID) return;
-      var switched = d.name !== S.name;
-      S.name = d.name; S.show = d.config; S.rev = d.rev; stable = JSON.stringify(S.show);
-      if (switched) { undo = []; $('bUndo').disabled = true; }
-      if (editing() && !switched) { pendingRender = true; renderRundown(); return; }
-      renderAll();
-    });
-    es.addEventListener('live', function (e) {
-      S.live = JSON.parse(e.data).live;
-      updateRundown();
-      if (S.tab === 'vars') refreshVarValues();
-      if (S.tab === 'modules') refreshModules();
-    });
-    es.addEventListener('vars', function (e) {
-      var d = JSON.parse(e.data);
-      if (d.reset) S.vars = {}; else S.vars[d.m] = Object.assign(S.vars[d.m] || {}, d.v);
-      if (S.tab === 'vars') refreshVarValues();
-      if (S.tab === 'modules') refreshModules();
-      refreshRdMods();
-    });
-    es.addEventListener('mod', function (e) {
-      var d = JSON.parse(e.data);
-      rdMods.concat(modViews).forEach(function (v) {
-        if (v.id === d.m && v.ctl.onEvent) try { v.ctl.onEvent(d.event, d.data); } catch (err) { console.error(d.m, err); }
+      L.loadModules(S.modules).then(renderAll);
+      R.show.on('change', E.remote);
+      R.live.on('change', function (v) {
+        if (!v) return;
+        S.live = U.clone(v);
+        updateRundown();
+        if (S.tab === 'vars') refreshVarValues();
+        if (S.tab === 'modules') refreshModules();
+      });
+      R.vars.on('change', function (v) {
+        S.vars = U.clone(v) || {};
+        if (S.tab === 'vars') refreshVarValues();
+        if (S.tab === 'modules') refreshModules();
+        refreshRdMods();
+      });
+      R.shows.on('change', function (v) { S.shows = U.clone(v) || []; renderHeader(); if (S.tab === 'shows' && !editing()) renderTab(); });
+      R.media.on('change', function (v) {
+        var was = JSON.stringify(S.media);
+        S.media = U.clone(v) || [];
+        if (JSON.stringify(S.media) === was) return;
+        T.useUploaded(S.media);
+        if (S.tab === 'settings') renderTab();
+      });
+      R.settings.on('change', function (v) { S.settings = U.clone(v); renderPills(); });
+      R.status.on('change', function (v) {
+        S.status = U.clone(v);
+        renderPills();
+        if (S.tab === 'settings') refreshSettings();
       });
     });
-    es.addEventListener('shows', function (e) { S.shows = JSON.parse(e.data).shows; renderHeader(); if (S.tab === 'shows') renderTab(); });
-    es.addEventListener('media', function (e) { S.media = JSON.parse(e.data).media; T.useUploaded(S.media); if (S.tab === 'settings') renderTab(); });
-    es.addEventListener('settings', function (e) { S.settings = JSON.parse(e.data).settings; renderPills(); });
-    es.addEventListener('status', function (e) {
-      var d = JSON.parse(e.data);
-      S.status = Object.assign(S.status || {}, d);
-      renderPills();
+    ncg.listenFor('mod', function (d) {
+      rdMods.concat(modViews).forEach(function (v) {
+        if (d && v.id === d.m && v.ctl.onEvent) try { v.ctl.onEvent(d.event, d.data); } catch (err) { console.error(d.m, err); }
+      });
     });
-    es.onerror = function () { S.connected = false; $('offline').hidden = false; renderPills(); };
+    /* the dashboard's link to NodeCG (panels share it) */
+    if (ncg.socket && ncg.socket.on) {
+      ncg.socket.on('disconnect', function () { S.connected = false; $('offline').hidden = false; renderPills(); });
+      ncg.socket.on('connect', function () { S.connected = true; $('offline').hidden = true; renderPills(); });
+    }
+    /* this Régie to the extension (the Réglages tab counts them), and the extension's clock */
+    L.hello(PID, 'panel', function (offset) { S.offset = offset; });
   }
   /* A change from elsewhere while the operator types here waits for the field
      to be left, so it doesn't pull the text from under the cursor */
@@ -153,49 +128,21 @@
     var a = document.activeElement;
     return a && $('tab').contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
   }
+  /* ops that replaced what the open form writes into */
+  function replaced(ops) {
+    return ops.some(function (op) {
+      return /^(graphics|theme|motion|variables|modules|title|timezone)$/.test(op.path) || (S.sel && op.path === 'graphics.#' + S.sel);
+    });
+  }
   document.addEventListener('focusout', function () {
     setTimeout(function () { if (pendingRender && !editing()) { pendingRender = false; renderAll(); } }, 50);
   });
-  setInterval(function () { api('GET', 'api/status').then(function (s) { S.status = s; renderPills(); if (S.tab === 'settings') refreshSettings(); }).catch(function () {}); }, 5000);
 
-  // ===== Module descriptors (the same files the outputs load) =====
-  var loaded = {};
-  function script(src) {
-    if (loaded[src]) return loaded[src];
-    return (loaded[src] = new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.src = src; s.onload = resolve; s.onerror = function () { resolve(); };
-      document.head.appendChild(s);
-    }));
-  }
-  /* Every installed module's descriptor, the graphic types it brings (so
-     they can be added and edited even before the module is switched on) and
-     its panel part */
-  function loadModules() {
-    return Promise.all(S.modules.map(function (id) {
-      return script('modules/' + id + '/module.js').then(function () {
-        var D = mod(id);
-        if (!D) return null;
-        var files = Object.keys(D.graphics || {}).map(function (t) { return D.graphics[t]; });
-        if (D.panel) files.push(D.panel);
-        return files.reduce(function (p, f) { return p.then(function () { return script('modules/' + id + '/' + f); }); }, Promise.resolve());
-      });
-    }));
-  }
-  function mod(id) { return window.GFXModules && window.GFXModules[id]; }
-  /* A module's variables: a list, or a function of its settings for the
-     ones named after what the operator created (a timer, a feed…) */
-  function modVars(id) {
-    var D = mod(id);
-    if (!D || !D.vars) return [];
-    if (typeof D.vars !== 'function') return D.vars;
-    try { return D.vars(modSettings(id), U) || []; } catch (e) { return []; }
-  }
-  function enabledMods() { return Object.keys(S.show.modules || {}).filter(function (id) { return S.show.modules[id] && S.show.modules[id].enabled && mod(id); }); }
-  function modSettings(id) {
-    var D = mod(id), m = (S.show.modules || {})[id] || {};
-    return U.withDefaults(U.clone(m.settings || {}), D ? U.schemaDefaults(D.settings) : {});
-  }
+  // ===== Modules (engine/panel/link.js: the same files the outputs load) =====
+  function mod(id) { return L.mod(id); }
+  function modVars(id) { return L.modVars(S.show, id); }
+  function enabledMods() { return L.enabledMods(S.show); }
+  function modSettings(id) { return L.modSettings(S.show, id); }
 
   // ===== Helpers =====
   function tz() { return (S.show && S.show.timezone) || 'Europe/Paris'; }
@@ -209,79 +156,16 @@
     while (gById(id) || id === 'all' || id === 'var' || S.modules.indexOf(id) >= 0) id = base + '_' + n++;
     return id;
   }
-  function visualsList(kind) {
-    var out = [];
-    enabledMods().forEach(function (id) {
-      var D = mod(id), list = (kind === 'columns' ? D.columns : D.visuals) || {};
-      Object.keys(list).forEach(function (k) { out.push(['module:' + id + '.' + k, D.label + ' · ' + list[k].label]); });
-    });
-    return out;
-  }
-  /* The variables a text can use, for the {} picker */
-  function varGroups() {
-    var g = [{ title: 'Horloge et date', items: [['clock', 'heure', U.hms(now(), tz())], ['clock.hm', 'heure sans secondes', U.hm(now(), tz())],
-               ['date', 'date', U.longDate(now(), tz())], ['date.short', 'date courte', U.shortDate(now(), tz())],
-               ['day', 'jour', U.weekday(now(), tz())], ['show', 'titre du projet', S.show.title]] }];
-    g.push({ title: 'Variables libres', items: (S.show.variables || []).map(function (v) {
-      return ['var.' + v.name, v.label, S.live && S.live.vars ? S.live.vars[v.name] : v.value];
-    }) });
-    enabledMods().forEach(function (id) {
-      var D = mod(id), items = [], seen = {};
-      modVars(id).forEach(function (v) { seen[v.name] = true; items.push([id + '.' + v.name, v.label, show((S.vars[id] || {})[v.name])]); });
-      Object.keys(S.vars[id] || {}).forEach(function (k) { if (!seen[k] && k.charAt(0) !== '_') items.push([id + '.' + k, '', show(S.vars[id][k])]); });
-      g.push({ title: D.label, items: items });
-    });
-    return g;
-    function show(v) { return v == null ? '' : typeof v === 'object' ? '[liste]' : v; }
-  }
-  function formEnv(g) {
-    return {
-      tz: tz, changed: changed,
-      themeColor: function (token) { return T.resolve(S.show.theme).colors[token]; },
-      vars: varGroups,
-      media: function (accept) {
-        return S.media.filter(function (m) { return !accept || accept.split(',').indexOf(m.kind) >= 0; });
-      },
-      upload: upload,
-      send: function (f, kind, i) {
-        if (!g) return;
-        if (kind === 'take') cmd(g.id, 'take.' + (i + 1));
-        if (kind === 'send') cmd(g.id, 'preset.' + (i + 1));
-      },
-      options: function (source) {
-        switch (source) {
-          case 'panelSources': return [['none', 'Aucun'], ['image', 'Image']].concat(visualsList('visuals'));
-          case 'cardSources': return [['none', 'Aucune']].concat(visualsList('visuals'));
-          case 'columnSources': return [['', '— choisir —']].concat(visualsList('columns'));
-          case 'flashAnchors': return [['free', 'Libre (position ci-dessous)']].concat(S.show.graphics.filter(function (x) { return x.type === 'bandeau'; })
-            .map(function (x) { return ['bandeau:' + x.id, 'Collé au bandeau « ' + x.name + ' »']; }));
-          case 'motionPresets': return [['', 'Celle du projet']].concat(Object.keys(M.PRESETS).map(function (k) { return [k, M.PRESETS[k].label]; }));
-          case 'listVars': {
-            var out = [['', '— choisir —']];
-            varGroups().slice(1).forEach(function (grp) { grp.items.forEach(function (it) { out.push([it[0], it[0] + (it[1] ? ' — ' + it[1] : '')]); }); });
-            return out;
-          }
-        }
-        var m = /^graphics:(\w+)$/.exec(source);
-        if (m) return [['', 'Automatique']].concat(S.show.graphics.filter(function (x) { return x.type === m[1]; }).map(function (x) { return [x.id, x.name + ' (' + x.id + ')']; }));
-        /* a list a module draws from its settings: mod:<id>.<name> → its options[name](settings, U) */
-        var mo = /^mod:(\w+)\.(\w+)$/.exec(source), D = mo && mod(mo[1]), fn = D && D.options && D.options[mo[2]];
-        if (fn) { try { return [['', '— choisir —']].concat(fn(modSettings(mo[1]), U) || []); } catch (e) { return []; } }
-        return [];
-      }
-    };
-  }
-  function upload(file) {
-    toast('Envoi de ' + file.name + '…');
-    return fetch('api/media?name=' + encodeURIComponent(file.name), { method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' } })
-      .then(function (r) { return r.json(); })
-      .then(function (j) { if (!j.ok) throw new Error(j.error); toast(j.name + ' importé'); return j.name; })
-      .catch(function (e) { toast('Import impossible : ' + e.message, true); return null; });
-  }
-  function copy(text) {
-    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Copié : ' + text); },
-      function () { window.prompt('Copier :', text); });
-  }
+  /* what the forms, and the modules' panel parts, are given */
+  var ctx = {
+    show: function () { return S.show; }, live: function () { return S.live; }, vars: function () { return S.vars; },
+    media: function () { return S.media; }, status: function () { return S.status; },
+    now: now, tz: tz, changed: function () { changed(); }, cmd: cmd,
+    upload: function (file) { return upload(file); },
+    onSetting: function () { if (S.tab === 'modules') renderTab(); }
+  };
+  function formEnv(g) { return L.formEnv(Object.assign({}, ctx, { graphic: g ? g.id : null })); }
+  function upload(file) { return L.upload(file, S.media); }
   function select(id) {
     S.sel = id;
     try { localStorage.setItem('regie.sel', id || ''); } catch (e) { /* ignore */ }
@@ -302,11 +186,12 @@
   $('showPick').addEventListener('change', function () {
     var name = $('showPick').value;
     var onAir = S.show.graphics.some(function (g) { return g.type !== 'flash' && liveOf(g.id).air; });
-    if (onAir && !confirm('Des graphiques sont à l\'antenne : ils seront remplacés par ceux du projet « ' + name + ' ». Continuer ?')) {
-      $('showPick').value = S.name; return;
-    }
-    api('POST', 'api/shows', { action: 'activate', name: name }).then(function () { toast('Projet ouvert : ' + name); },
-      function (e) { toast(e.message, true); $('showPick').value = S.name; });
+    (onAir ? L.ask({ text: 'Des graphiques sont à l\'antenne : ils seront remplacés par ceux du projet « ' + name + ' ». Continuer ?' }) : Promise.resolve(true))
+      .then(function (yes) {
+        if (!yes) { $('showPick').value = S.name; return; }
+        msg('shows', { action: 'activate', name: name }).then(function () { toast('Projet ouvert : ' + name); },
+          function (e) { toast(e.message, true); $('showPick').value = S.name; });
+      });
   });
   $('bAllOff').addEventListener('click', function () { cmd('all', 'all.off'); });
   function renderPills() {
@@ -331,7 +216,8 @@
     try { pv.contentWindow.postMessage({ gfxPreview: want }, location.origin); } catch (e) { /* not loaded yet */ }
   }
   pv.addEventListener('load', function () { previewScale(); setTimeout(previewForce, 300); });
-  pv.src = 'overlay.html?preview=1';
+  /* the rundown alone runs no preview (one output page less) */
+  if (!COMPACT) pv.src = 'graphics/overlay.html?preview=1';
   $('pvMode').addEventListener('change', previewForce);
   var bgPref = 'photo';
   try { bgPref = localStorage.getItem('regie.pvbg') || 'photo'; } catch (e) { /* ignore */ }
@@ -738,7 +624,7 @@
     previewForce();
   }
   /* a module's panel view may run timers: destroy() when it goes */
-  function dropViews(list) { list.forEach(function (v) { if (v.ctl && v.ctl.destroy) try { v.ctl.destroy(); } catch (e) { /* going anyway */ } }); }
+  var dropViews = L.dropViews;
   function renderTab() {
     var el = $('tab');
     dropViews(modViews); modViews = [];
@@ -776,13 +662,17 @@
       h('button', { class: 'small ghost', text: 'Supprimer', onclick: function () { remove(g); } })
     ]));
     el.appendChild(h('p', { class: 'note', text: def.desc + '. Les textes acceptent des variables : bouton { } à droite du champ.' }));
+    /* the graphic as the show has it now (an edit from elsewhere may have
+       replaced the object this form was drawn from) */
+    var G = function () { return gById(g.id) || g; };
     var target = {
-      get: function (path) { return path.charAt(0) === '@' ? U.getPath(g, path.slice(1)) : U.getPath(g.fields, path); },
+      get: function (path) { return path.charAt(0) === '@' ? U.getPath(G(), path.slice(1)) : U.getPath(G().fields, path); },
       set: function (path, v) {
-        if (path.charAt(0) === '@') { if (!g.motion) g.motion = {}; U.setPath(g, path.slice(1), v); }
-        else U.setPath(g.fields, path, v);
+        var x = G();
+        if (path.charAt(0) === '@') { if (!x.motion) x.motion = {}; U.setPath(x, path.slice(1), v); }
+        else { if (!x.fields) x.fields = {}; U.setPath(x.fields, path, v); }
       },
-      values: function () { return fieldsOf(g); }
+      values: function () { return fieldsOf(G()); }
     };
     var box = h('div');
     el.appendChild(box);
@@ -822,11 +712,15 @@
     changed(); renderRundown(); renderTab();
   }
   function remove(g) {
-    if (!confirm('Supprimer « ' + g.name + ' » ?')) return;
-    S.show.graphics.splice(S.show.graphics.indexOf(g), 1);
-    S.sel = null;
-    changed(); renderRundown(); renderTab();
-    toast('Supprimé (Annuler pour revenir en arrière)');
+    L.ask({ text: 'Supprimer « ' + g.name + ' » ?' }).then(function (yes) {
+      if (!yes) return;
+      var i = S.show.graphics.findIndex(function (x) { return x.id === g.id; });
+      if (i < 0) return;
+      S.show.graphics.splice(i, 1);
+      S.sel = null;
+      changed(); renderRundown(); renderTab();
+      toast('Supprimé (Annuler pour revenir en arrière)');
+    });
   }
   /* What Companion sends for this graphic */
   function commandsHelp(g) {
@@ -838,7 +732,7 @@
     viewsOf(g).forEach(function (v) { list.push([v.name + '.toggle', v.label]); });
     if (g.type === 'synthe') list = list.concat([['take.2', 'afficher le 2e nom'], ['entry.next', 'nom suivant'], ['entry.prev', 'nom précédent']]);
     if (g.type === 'flash') list = list.concat([['banner.<texte>', 'envoyer un message'], ['preset.1', 'envoyer le message prêt n° 1'], ['banner.next', 'passer'], ['banner.clear', 'vider la file']]);
-    var base = location.origin + '/api/cmd/' + g.id + '/';
+    var base = abs('api/cmd/' + g.id + '/');
     var tb = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Commande' }), h('th', { text: 'Effet' }), h('th', { text: 'Companion (HTTP GET)' })])]);
     list.forEach(function (c) {
       tb.appendChild(h('tr', {}, [h('td', {}, [h('code', { text: c[0] })]), h('td', { text: c[1] }),
@@ -846,7 +740,7 @@
     });
     return h('details', { class: 'fm-sec' }, [h('summary', { text: 'Commandes (Companion, OBS)' }), h('div', { class: 'fm-sec-body' }, [
       h('p', { class: 'note' }, ['Companion : module « Generic HTTP », requête GET sur ', h('code', { text: base + '<commande>' }),
-        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + g.id + ':air.toggle"}' }), '. ' + def.label + ' : ' + g.id]),
+        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + g.id + ':air.toggle"}' }), '. ' + def.label + ' : ' + g.id + loginNote()]),
       tb])]);
   }
 
@@ -859,9 +753,12 @@
     Object.keys(T.PRESETS).forEach(function (k) {
       var P = T.PRESETS[k], c = P.colors;
       grid.appendChild(h('button', { class: 'preset' + ((th.preset || 'direct') === k ? ' on' : ''), onclick: function () {
-        if (th.colors || th.fonts || th.shape) { if (!confirm('Appliquer « ' + P.label + ' » remplace vos couleurs, polices et formes. Continuer ?')) return; }
-        S.show.theme = { preset: k };
-        changed(); renderTab();
+        var own = th.colors || th.fonts || th.shape;
+        (own ? L.ask({ text: 'Appliquer « ' + P.label + ' » remplace vos couleurs, polices et formes. Continuer ?' }) : Promise.resolve(true)).then(function (yes) {
+          if (!yes) return;
+          S.show.theme = { preset: k };
+          changed(); renderTab();
+        });
       } }, [h('b', { text: P.label }),
         h('div', { class: 'sw' }, [c.accent, c.base, c.base2, c.surface, c.highlight].map(function (x) { return h('i', { style: 'background:' + x }); })),
         h('div', { class: 'sample', style: "font-family:" + T.stack(P.fonts.head.family) + ";font-weight:" + P.fonts.head.weight + (P.fonts.head.upper === false ? '' : ';text-transform:uppercase') +
@@ -899,8 +796,9 @@
       fam.value = F.family;
       fam.addEventListener('change', function () {
         if (fam.value === '__other') {
-          var n = prompt('Nom exact de la police installée sur la machine d\'OBS (par ex. Univers Next Pro) :', '');
-          if (n && n.trim()) setF('family', n.trim()); else fam.value = F.family;
+          L.ask({ text: 'Nom exact de la police installée sur la machine d\'OBS (par ex. Univers Next Pro) :', input: '' }).then(function (n) {
+            if (n && n.trim()) setF('family', n.trim()); else fam.value = F.family;
+          });
         } else setF('family', fam.value);
       });
       var info = T.FONTS.find(function (x) { return x.family === F.family; });
@@ -977,12 +875,13 @@
     Object.keys(M.PRESETS).forEach(function (k) {
       var P = M.PRESETS[k];
       grid.appendChild(h('button', { class: 'preset' + ((mo.preset || 'direct') === k ? ' on' : ''), onclick: function () {
-        if (mo.roles && (mo.preset || 'direct') !== k) {
-          if (!confirm('Changer de style efface vos réglages élément par élément. Continuer ?')) return;
-          delete mo.roles;
-        }
-        mo.preset = k; changed(); renderTab();
-        setTimeout(function () { if (S.sel) try { pv.contentWindow.postMessage({ gfxReplay: S.sel }, location.origin); } catch (e) { /* ignore */ } }, 400);
+        var reset = mo.roles && (mo.preset || 'direct') !== k;
+        (reset ? L.ask({ text: 'Changer de style efface vos réglages élément par élément. Continuer ?' }) : Promise.resolve(true)).then(function (yes) {
+          if (!yes) return;
+          if (reset) delete mo.roles;
+          mo.preset = k; changed(); renderTab();
+          setTimeout(function () { if (S.sel) try { pv.contentWindow.postMessage({ gfxReplay: S.sel }, location.origin); } catch (e) { /* ignore */ } }, 400);
+        });
       } }, [h('b', { text: P.label }), h('small', { text: P.desc })]));
     });
     el.appendChild(grid);
@@ -1103,7 +1002,7 @@
     });
     el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Variables libres' }),
       h('p', { class: 'note' }, ['Des valeurs à vous (score, invité, sujet…), changées ici ou depuis Companion : ',
-        h('code', { text: location.origin + '/api/cmd/var/score.+1' }), ' ou ', h('code', { text: '…/var/score?text=3' }), '.']),
+        h('code', { text: abs('api/cmd/var/score.+1') }), ' ou ', h('code', { text: '…/var/score?text=3' }), '.' + loginNote()]),
       tb, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: '+ Nouvelle variable', onclick: function () {
         var n = 'variable', k = 2;
         while (vars.some(function (x) { return x.name === n; })) n = 'variable_' + k++;
@@ -1183,43 +1082,12 @@
   /* What Companion sends to a module: cmdHelp = [[command, effect, example
      for its <…> part]] (or a function of the settings, for commands named
      after what the operator created: a timer's id…) */
-  function moduleCommandsHelp(id, list) {
-    var base = location.origin + '/api/cmd/' + id + '/';
-    var tb = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Commande' }), h('th', { text: 'Effet' }), h('th', { text: 'Companion (HTTP GET)' })])]);
-    list.forEach(function (c) {
-      var url = base + c[0].replace(/<[^>]*>/g, c[2] || 'Texte');
-      tb.appendChild(h('tr', {}, [h('td', {}, [h('code', { text: c[0] })]), h('td', { text: c[1] }),
-        h('td', {}, [h('button', { class: 'fm-mini', text: 'copier l\'URL', title: url, onclick: function () { copy(url); } })])]));
-    });
-    return h('details', { class: 'fm-sec' }, [h('summary', { text: 'Commandes (Companion, OBS)' }), h('div', { class: 'fm-sec-body' }, [
-      h('p', { class: 'note' }, ['Companion : module « Generic HTTP », requête GET sur ', h('code', { text: base + '<commande>' }),
-        ' — ou OBS « Broadcast Custom Event » avec ', h('code', { text: '{"gfx": "' + id + ':<commande>"}' }), '.']), tb])]);
-  }
+  var moduleCommandsHelp = L.moduleCommandsHelp;
   function refreshModules() {
     modViews.forEach(function (v) { if (v.ctl.refresh) try { v.ctl.refresh(); } catch (e) { console.error(e); } });
   }
-  function moduleApi(id) {
-    return {
-      id: id, U: U, h: h, toast: toast, copy: copy,
-      cmd: function (c, text) { return cmd(id, c, text); },
-      state: function () { return (S.live && S.live.modules && S.live.modules[id]) || {}; },
-      vars: function () { return S.vars[id] || {}; },
-      settings: function () { return modSettings(id); },
-      /* change the module's settings (saved like any edit): setting(key, value)
-         or setting({ key: value, … }); the Modules tab redraws with them */
-      setting: function (key, value) {
-        var entry = S.show.modules[id] = S.show.modules[id] || { enabled: true, settings: {} };
-        entry.settings = entry.settings || {};
-        var o = typeof key === 'object' ? key : {};
-        if (typeof key !== 'object') o[key] = value;
-        Object.keys(o).forEach(function (k) { U.setPath(entry.settings, k, o[k]); });
-        changed();
-        if (S.tab === 'modules') renderTab();
-      },
-      status: function () { return api('GET', 'api/modules/' + id + '/status'); },
-      tz: tz, now: now, log: function () { return (S.status && S.status.log) || []; }
-    };
-  }
+  /* what a module's panel part gets (engine/panel/link.js) */
+  function moduleApi(id) { return L.moduleApi(id, ctx); }
 
   // ===== Projects =====
   function renderShows(el) {
@@ -1243,17 +1111,20 @@
       if (s.name !== S.name) acts.appendChild(h('button', { class: 'fm-mini red', text: 'Ouvrir', onclick: function () { $('showPick').value = s.name; $('showPick').dispatchEvent(new Event('change')); } }));
       else acts.appendChild(h('b', { text: 'actif ' }));
       acts.appendChild(h('button', { class: 'fm-mini', text: 'Dupliquer', onclick: function () {
-        var n = prompt('Nom du nouveau projet (lettres, chiffres, _) :', s.name + '_copie');
-        if (n) api('POST', 'api/shows', { action: 'duplicate', from: s.name, name: n, title: s.title + ' (copie)' }).then(function () { toast('Projet créé'); }, function (e) { toast(e.message, true); });
+        L.ask({ text: 'Nom du nouveau projet (lettres, chiffres, _) :', input: s.name + '_copie' }).then(function (n) {
+          if (n) msg('shows', { action: 'duplicate', from: s.name, name: n, title: s.title + ' (copie)' }).then(function () { toast('Projet créé'); }, function (e) { toast(e.message, true); });
+        });
       } }));
       acts.appendChild(h('button', { class: 'fm-mini', text: 'Renommer', onclick: function () {
-        var n = prompt('Nouveau nom de fichier :', s.name);
-        if (n && n !== s.name) api('POST', 'api/shows', { action: 'rename', from: s.name, name: n }).then(function () { toast('Renommé'); }, function (e) { toast(e.message, true); });
+        L.ask({ text: 'Nouveau nom de fichier :', input: s.name }).then(function (n) {
+          if (n && n !== s.name) msg('shows', { action: 'rename', from: s.name, name: n }).then(function () { toast('Renommé'); }, function (e) { toast(e.message, true); });
+        });
       } }));
       acts.appendChild(h('a', { class: 'fm-mini', href: 'api/shows/' + s.name + '?download', text: ' exporter ' }));
       if (s.name !== S.name) acts.appendChild(h('button', { class: 'fm-mini', text: '✕', title: 'Supprimer', onclick: function () {
-        if (confirm('Supprimer le projet « ' + s.title + ' » ? (le fichier est renommé en .deleted)'))
-          api('POST', 'api/shows', { action: 'delete', name: s.name }).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
+        L.ask({ text: 'Supprimer le projet « ' + s.title + ' » ? (le fichier est renommé en .deleted)' }).then(function (yes) {
+          if (yes) msg('shows', { action: 'delete', name: s.name }).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
+        });
       } }));
       tb.appendChild(h('tr', {}, [h('td', { text: s.title }), h('td', {}, [h('code', { text: s.name })]),
         h('td', { text: new Date(s.mtime).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }), acts]));
@@ -1266,16 +1137,19 @@
     imp.addEventListener('change', function () {
       var file = imp.files[0];
       if (!file) return;
+      var cfg;
       file.text().then(function (txt) {
-        var cfg = JSON.parse(txt), n = prompt('Nom du projet importé :', U.slug(file.name.replace(/\.json$/i, '')));
+        cfg = JSON.parse(txt);
+        return L.ask({ text: 'Nom du projet importé :', input: U.slug(file.name.replace(/\.json$/i, '')) });
+      }).then(function (n) {
         if (!n) return;
-        return api('POST', 'api/shows', { action: 'import', name: n, config: cfg }).then(function () { toast('Projet importé'); });
+        return msg('shows', { action: 'import', name: n, config: cfg }).then(function () { toast('Projet importé'); });
       }).catch(function (e) { toast('Import impossible : ' + e.message, true); });
     });
     el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Projets' }), tb,
       h('div', { class: 'bar', style: 'margin-top:10px' }, [nn, nt, from, h('button', { class: 'small red', text: 'Créer', onclick: function () {
         if (!U.slug(nn.value)) return toast('Donnez un nom de fichier', true);
-        api('POST', 'api/shows', { action: from.value ? 'duplicate' : 'create', from: from.value, name: nn.value, title: nt.value || nn.value })
+        msg('shows', { action: from.value ? 'duplicate' : 'create', from: from.value, name: nn.value, title: nt.value || nn.value })
           .then(function () { toast('Projet créé : ouvrez-le dans la liste'); }, function (e) { toast(e.message, true); });
       } }), h('button', { class: 'small', text: 'Importer un fichier…', onclick: function () { imp.click(); } }), imp])]));
   }
@@ -1283,7 +1157,7 @@
   // ===== Settings =====
   var setRefs = {};
   function renderSettings(el) {
-    var base = location.origin + '/overlay.html';
+    var base = abs('graphics/overlay.html');
     var urls = h('table', { class: 't' }, [h('tr', {}, [h('th', { text: 'Source navigateur' }), h('th', { text: 'URL' }), h('th')])]);
     var addUrl = function (label, url) {
       urls.appendChild(h('tr', {}, [h('td', { text: label }), h('td', {}, [h('code', { text: url })]), h('td', {}, [h('button', { class: 'fm-mini', text: 'copier', onclick: function () { copy(url); } })])]));
@@ -1291,7 +1165,8 @@
     addUrl('Tous les graphiques', base);
     S.show.graphics.forEach(function (g) { addUrl(g.name, base + '?only=' + g.id); });
     el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Sorties OBS' }),
-      h('p', { class: 'note', text: 'Dans OBS : Source → Navigateur, 1920 × 1080, l\'URL ci-dessous. Une source pour tout, ou une par graphique pour les placer dans des scènes différentes. Les graphiques entrent avec leur animation quand la scène passe à l\'antenne (?noautoanim pour l\'empêcher).' }),
+      h('p', { class: 'note', text: 'Dans OBS : Source → Navigateur, 1920 × 1080, l\'URL ci-dessous. Une source pour tout, ou une par graphique pour les placer dans des scènes différentes. Les graphiques entrent avec leur animation quand la scène passe à l\'antenne (?noautoanim pour l\'empêcher).' +
+        (loginNote() ? ' Avec la connexion NodeCG, prenez l\'URL dans son onglet Graphics : elle porte votre clé.' : '') }),
       urls, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: 'Recharger toutes les sorties', onclick: function () { cmd('all', 'reload'); } })])]));
     var st = S.settings || { obs: {}, companion: {} };
     var oe = h('input', { type: 'checkbox', checked: !!st.obs.enabled }), oh = h('input', { type: 'text', value: st.obs.host || '127.0.0.1' });
@@ -1301,7 +1176,7 @@
       h('p', { class: 'note', text: 'Pour les boutons Companion « OBS → Broadcast Custom Event » : {"gfx": "bandeau:air.toggle"}, ou les anciens {"eclipse": "…"} et {"a350f": "…"}. Le serveur écoute OBS une seule fois pour toutes les sorties.' }),
       h('div', { class: 'row' }, [h('label', { class: 'fm-switch' }, [oe, h('span')]), h('span', { text: 'activer' }), oh, op, opw,
         h('button', { class: 'small red', text: 'Enregistrer', onclick: function () {
-          api('PUT', 'api/settings', { obs: { enabled: oe.checked, host: oh.value, port: +op.value, password: opw.value } }).then(function () { toast('Lien OBS enregistré'); }, function (e) { toast(e.message, true); });
+          msg('settings:save', { obs: { enabled: oe.checked, host: oh.value, port: +op.value, password: opw.value } }).then(function () { toast('Lien OBS enregistré'); }, function (e) { toast(e.message, true); });
         } }), setRefs.obs])]));
     var ce = h('input', { type: 'checkbox', checked: !!st.companion.enabled }), ch = h('input', { type: 'text', value: st.companion.host || '127.0.0.1:8000' });
     var cp = h('input', { type: 'text', value: st.companion.prefix || 'gfx', style: 'width:90px' });
@@ -1310,7 +1185,7 @@
       h('p', { class: 'note', text: 'Le serveur pousse l\'état dans des variables personnalisées de Companion (à créer dans Companion) : <préfixe>_<graphique>_air, les variables libres, et celles des modules (eclipse_*, a350f_*… comme avant).' }),
       h('div', { class: 'row' }, [h('label', { class: 'fm-switch' }, [ce, h('span')]), h('span', { text: 'activer' }), ch, h('span', { class: 'fm-unit', text: 'préfixe' }), cp,
         h('button', { class: 'small red', text: 'Enregistrer et tout renvoyer', onclick: function () {
-          api('PUT', 'api/settings', { companion: { enabled: ce.checked, host: ch.value, prefix: cp.value } }).then(function () { toast('Companion enregistré'); }, function (e) { toast(e.message, true); });
+          msg('settings:save', { companion: { enabled: ce.checked, host: ch.value, prefix: cp.value } }).then(function () { toast('Companion enregistré'); }, function (e) { toast(e.message, true); });
         } }), setRefs.comp])]));
     // media
     var mt = h('table', { class: 't' }, [h('tr', {}, ['', 'Fichier', 'Type', 'Taille', ''].map(function (x) { return h('th', { text: x }); }))]);
@@ -1318,13 +1193,15 @@
       mt.appendChild(h('tr', {}, [h('td', {}, [m.kind === 'image' ? h('img', { src: m.url, style: 'height:28px;max-width:80px;object-fit:contain', alt: '' }) : null]),
         h('td', {}, [h('code', { text: m.name })]), h('td', { text: { image: 'image', font: 'police', video: 'vidéo', data: 'données' }[m.kind] }),
         h('td', { text: (m.size / 1024).toFixed(0) + ' Kio' }),
-        h('td', {}, [h('button', { class: 'fm-mini', text: '✕', onclick: function () {
-          if (confirm('Supprimer ' + m.name + ' ?')) api('DELETE', 'api/media/' + encodeURIComponent(m.name)).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
+        h('td', {}, [m.builtin ? h('span', { class: 'fm-unit', text: 'exemple', title: 'Livré avec le bundle (dossier media/)' }) : h('button', { class: 'fm-mini', text: '✕', onclick: function () {
+          L.ask({ text: 'Supprimer ' + m.name + ' ?' }).then(function (yes) {
+            if (yes) L.removeMedia(m).then(function () { toast('Supprimé'); }, function (e) { toast(e.message, true); });
+          });
         } })])]));
     });
     var mf = h('input', { type: 'file', multiple: true, hidden: true });
     mf.addEventListener('change', function () { [].forEach.call(mf.files, function (f) { upload(f); }); });
-    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé), polices, et fichiers de données (CSV, JSON, RSS, texte) que le module « Flux de données » peut lire (/media/nom.csv) — dans le dossier media/.' }),
+    el.appendChild(h('div', { class: 'card' }, [h('h3', { text: 'Médias' }), h('p', { class: 'note', text: 'Images (logos, fonds), vidéos (fonds en boucle, webm conseillé), polices, et fichiers de données (CSV, JSON, RSS, texte) que le module « Flux de données » peut lire (/media/nom.csv). Ils sont rangés dans les assets de NodeCG, une catégorie par sorte (aussi dans son onglet Assets) ; les exemples viennent avec le bundle. Les sons se règlent dans l\'onglet Mixer de NodeCG.' }),
       mt, h('div', { class: 'bar', style: 'margin-top:8px' }, [h('button', { class: 'small', text: 'Importer des fichiers…', onclick: function () { mf.click(); } }), mf])]));
     setRefs.server = h('div');
     setRefs.log = h('pre', { class: 'log' });
@@ -1338,7 +1215,7 @@
     if (setRefs.comp) setRefs.comp.textContent = 'état : ' + (s.companion.state || '—') + ' · ' + (s.companion.sent || 0) + ' envois' + (s.companion.error ? ' (' + s.companion.error + ')' : '');
     var outs = s.clients.filter(function (c) { return c.role === 'output'; });
     setRefs.server.innerHTML = '';
-    setRefs.server.appendChild(h('p', { class: 'note', text: 'Version ' + s.version + ' · démarré ' + new Date(s.boot).toLocaleString('fr-FR') + ' · ' +
+    setRefs.server.appendChild(h('p', { class: 'note', text: 'Version ' + s.version + ' (bundle NodeCG ' + s.bundle + ') · démarré ' + new Date(s.boot).toLocaleString('fr-FR') + ' · ' +
       outs.length + ' sortie' + (outs.length > 1 ? 's' : '') + ' connectée' + (outs.length > 1 ? 's' : '') + ' · ' +
       (s.clients.length - outs.length) + ' régie' + (s.clients.length - outs.length > 1 ? 's' : '') +
       (Object.keys(s.leaders || {}).length ? ' · modules calculés par : ' + Object.keys(s.leaders).map(function (m) { return m + ' → ' + s.leaders[m]; }).join(', ') : '') }));
@@ -1349,6 +1226,6 @@
     });
   }
 
-  $('outLink').href = 'overlay.html';
+  $('outLink').href = 'graphics/overlay.html';
   connect();
 })();

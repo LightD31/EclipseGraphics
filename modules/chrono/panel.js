@@ -9,7 +9,7 @@
     el.appendChild(box);
     var list = H.timers(api.settings(), api.U);
     if (!list.length) {
-      box.appendChild(h('div', { class: 'sub', text: 'Aucun minuteur : ajoutez-en dans l\'onglet Modules.' }));
+      box.appendChild(h('div', { class: 'sub', text: 'Aucun minuteur : ajoutez-en dans les réglages du module.' }));
       return {};
     }
     list.forEach(function (t, i) {

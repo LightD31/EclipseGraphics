@@ -1,7 +1,8 @@
-/* The output page (overlay.html, the OBS browser source, 1920×1080).
+/* The output page (graphics/overlay.html, the OBS browser source,
+   1920×1080), a NodeCG graphic of the bundle.
 
-   It renders whatever the server's live state says: which graphics are on
-   air, in which layout, with which texts. Nothing is decided here that
+   It renders whatever the extension's live state says: which graphics are
+   on air, in which layout, with which texts. Nothing is decided here that
    another source could disagree with — every browser source of the show
    shows the same thing, and a refreshed source comes back as it was.
 
@@ -19,7 +20,7 @@
    Modules (modules/<id>/) run here: they compute their variables (the
    A350F's altitude, the eclipse's obscuration…) and draw their visuals
    (map, sky) in the bandeau's slots. One output page per module reports its
-   variables to the server (the leader), for Companion and the panel. */
+   variables to the extension (the leader), for Companion and the Régie. */
 (function () {
   'use strict';
   var U = window.GFXShared, M = window.GFXMotion, T = window.GFXTheme, GFX = window.GFX;
@@ -67,45 +68,60 @@
   }
   function render(str) { return U.render(str, getRaw); }
 
-  // ===== Server =====
-  function post(path, body) {
-    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json(); });
-  }
+  // ===== Server: the bundle's extension, through NodeCG =====
+  /* What to show comes in the extension's Replicants (catalog, show, live,
+     vars, media); commands and the modules' reports go as messages */
+  var ncg = window.nodecg;
+  function send(name, data) { return ncg.sendMessage(name, data); }
   function command(target, cmd, text) {
-    return post('api/cmd?from=output', { target: target || '', cmd: cmd, text: text }).catch(function () {});
+    return send('cmd', { target: target || '', cmd: cmd, text: text, from: 'output' }).catch(function () {});
   }
   window.gfx = command;
   /* The old overlays' entry points (OBS "Interact", a console) still work */
   window.eclipseCommand = function (cmd) { return command('eclipse', cmd); };
   window.a350fCommand = function (cmd, data) { return command('a350f', cmd, data && data.text); };
 
-  var es;
   function connect() {
-    es = new EventSource('api/events?role=output&id=' + CID + (ONLY.length ? '&only=' + encodeURIComponent(ONLY.join(',')) : ''));
-    es.addEventListener('hello', function (e) {
-      var d = JSON.parse(e.data);
-      S.offset = d.serverTime - Date.now();
-      S.modTypes = d.modTypes || {};
-      S.media = d.media || [];
-      S.vars = d.vars || {};
-      S.live = d.live;
-      applyShow(d.show, true);
+    var R = {};
+    ['catalog', 'show', 'live', 'vars', 'media'].forEach(function (n) { R[n] = ncg.Replicant(n); });
+    /* all of them first (a show needs to know the modules' graphic types),
+       then each change as it comes; what is read is copied, never written */
+    NodeCG.waitForReplicants(R.catalog, R.show, R.live, R.vars, R.media).then(function () {
+      R.catalog.on('change', function (v) { S.modTypes = (v && v.modTypes) || {}; });
+      R.media.on('change', function (v) { S.media = U.clone(v) || []; T.useUploaded(S.media); });
+      R.vars.on('change', function (v) { S.vars = U.clone(v) || {}; });
+      R.live.on('change', function (v) { if (v) { S.live = U.clone(v); applyLive(); } });
+      R.show.on('change', function (v) { if (v && v.config) applyShow(U.clone(v), S.rev < 0); });
     });
-    es.addEventListener('show', function (e) { applyShow(JSON.parse(e.data)); });
-    es.addEventListener('live', function (e) { S.live = JSON.parse(e.data).live; applyLive(); });
-    es.addEventListener('vars', function (e) {
-      var d = JSON.parse(e.data);
-      if (d.reset) { S.vars = {}; return; }
-      S.vars[d.m] = Object.assign(S.vars[d.m] || {}, d.v);
+    ncg.listenFor('leader', function (d) {
+      if (d && d.id === CID) { S.leader = d.modules || []; flushVars(true); }
     });
-    es.addEventListener('leader', function (e) { S.leader = JSON.parse(e.data).modules || []; flushVars(true); });
-    es.addEventListener('media', function (e) { S.media = JSON.parse(e.data).media || []; T.useUploaded(S.media); });
-    es.addEventListener('module', function (e) {
-      var d = JSON.parse(e.data), mod = S.mods[d.m];
+    ncg.listenFor('module', function (d) {
+      var mod = d && S.mods[d.m];
       if (mod && mod.inst && mod.inst.onCommand) try { mod.inst.onCommand(d.cmd, d.text); } catch (err) { console.error(err); }
     });
-    es.addEventListener('reload', function () { location.reload(); });
+    ncg.listenFor('reload', function () { location.reload(); });
+    /* a module's sound (a countdown at zero…): the page the extension picked
+       plays it (the module's leader, else an output), once */
+    ncg.listenFor('sound', function (d) { if (d && d.to === CID) playCue(d.cue); });
+    /* hello: now, again with the modules once they run, when the socket
+       comes back (a new one) and every 10 s */
+    register();
+    if (ncg.socket && ncg.socket.on) ncg.socket.on('connect', register);
+    setInterval(register, 10000);
+  }
+  /* This page to the extension: which modules it runs (one page per module
+     reports its variables: the leader), and the extension's clock */
+  function register() {
+    var t0 = Date.now();
+    return send('client', { id: CID, role: 'output', preview: PREVIEW, modules: Object.keys(S.mods), only: ONLY.join(','),
+                            socket: ncg.socket ? ncg.socket.id : '', ua: navigator.userAgent.slice(0, 120) }).then(function (j) {
+      if (!j || !j.ok) return;
+      S.offset = j.now - (t0 + Date.now()) / 2;
+      var was = S.leader.join();
+      S.leader = j.leader || [];
+      if (S.leader.join() !== was) flushVars(true);
+    }).catch(function () { /* the next hello */ });
   }
 
   // ===== Show → graphics =====
@@ -260,8 +276,17 @@
       else if (!want && G.onAir) playOut(G);
     });
   }
+  /* A sound cue of the bundle (package.json, nodecg.soundCues: its file and
+     volume are set in NodeCG's Mixer); never in the Régie's preview. OBS
+     hears it with the source's « Contrôler l'audio via OBS ». */
+  function playCue(name) {
+    if (!name || PREVIEW || !ncg.findCue || !ncg.findCue(name)) return;
+    try { ncg.playSound(name); } catch (e) { console.warn('son ' + name + ' : ' + e.message); }
+  }
+  function entranceSound(G) { playCue(G.conf.motion && G.conf.motion.sound); }
   function swapFlash(G, item) {
     G.itemId = item.id;
+    entranceSound(G);   /* a flash: every message comes in with its sound */
     var cfg = motionCfg(G);
     if (G.anim) G.anim.cancel();
     var h = G.anim = M.play(G.inst.parts(), 'out', cfg);
@@ -283,6 +308,7 @@
     }
     if (prev) prev.cancel();
     G.root.dataset.air = 'on';
+    entranceSound(G);
     if (G.inst.onIn) try { G.inst.onIn(); } catch (e) { console.error(e); }
     var h = G.anim = M.play(G.inst.parts(), 'in', motionCfg(G));
     G.root.style.visibility = '';
@@ -382,11 +408,6 @@
     }, Promise.resolve()).then(function () { loading = null; register(); syncGraphics(); });
     return loading;
   }
-  function register() {
-    post('api/client', { id: CID, modules: Object.keys(S.mods) }).then(function (j) {
-      if (j && j.leader) { S.leader = j.leader; flushVars(true); }
-    }).catch(function () { setTimeout(register, 2000); });
-  }
   function settingsOf(id) {
     var D = window.GFXModules && window.GFXModules[id];
     var m = (S.show.modules || {})[id] || {};
@@ -423,7 +444,7 @@
       var v = all ? S.local[m] : pendingVars[m];
       if (!v || !Object.keys(v).length) return;
       pendingVars[m] = {};
-      post('api/vars', { id: CID, m: m, v: v }).then(function (j) {
+      send('vars', { id: CID, m: m, v: v }).then(function (j) {
         if (j && j.leader === false) S.leader = S.leader.filter(function (x) { return x !== m; });
       }).catch(function () {});
     });
@@ -447,7 +468,7 @@
       /* A banner for the module's flash (only the leader's count) */
       flash: function (item, front) {
         if (S.leader.indexOf(id) < 0) return Promise.resolve(false);
-        return post('api/flash', { id: CID, m: id, item: item, front: !!front }).catch(function () {});
+        return send('flash', { id: CID, m: id, item: item, front: !!front }).catch(function () {});
       },
       cmd: function (cmd, text) { return command(id, cmd, text); },
       /* the graphics in this page that show one of this module's visuals */

@@ -49,7 +49,7 @@
           h('button', { class: 'small', text: 'm · km/h', onclick: function () { send('units.metric'); } })]),
         h('div', { class: 'row' }, [h('span', { class: 'lbl', text: 'Données' }),
           h('button', { class: 'small ghost', text: 'Oublier la trace des sorties', title: 'Les sorties effacent leur copie locale et reprennent celle du relais',
-            onclick: function () { if (confirm('Les sorties oublient leur trace locale et reprennent l\'enregistrement du relais. Continuer ?')) send('reset'); } }),
+            onclick: function () { api.ask('Les sorties oublient leur trace locale et reprennent l\'enregistrement du relais. Continuer ?').then(function (yes) { if (yes) send('reset'); }); } }),
           api.settings().demo ? h('button', { class: 'small', text: 'Relancer la démo', onclick: function () { send('demo.restart'); } }) : null])
       ]));
       el.appendChild(h('h2', { text: 'Événements du vol', style: 'margin:10px 0 6px' }));

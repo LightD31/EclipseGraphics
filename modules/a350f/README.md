@@ -29,38 +29,41 @@ aircraft's facts and Toulouse's weather (METAR). The figures roll between report
 instruments. An emergency squawk (7500 / 7600 / 7700) switches to neutral wording and
 raises `a350f_alert`: nothing alarming goes on air by itself.
 
-## Live data: ADS-B through the server
+## Live data: ADS-B through the extension
 
 Positions come from the aircraft's transponder through the free community aggregators
 [adsb.lol](https://adsb.lol) (ODbL) and [adsb.fi](https://adsb.fi). Neither sends CORS
-headers, so the server relays them (`/adsb/…`): it asks each API every 5 s (`--every`),
+headers, so the bundle's extension relays them (`adsb/…`): it asks each API every 5 s (`every`),
 taking turns — a fresh position every 2.5 s whatever the number of outputs — and leaves an
 API alone after an error or a 429 (30 s, doubling up to 5 min, or its `Retry-After`).
 
 **Every point is recorded** in `flight-log/<hex>-<UTC date>.jsonl` (git-ignored), reloaded
 on restart; holes (outages, the aircraft out of coverage) are filled from adsb.lol's own
 trace of the aircraft. The outputs fetch the recording on load and after a reconnection,
-so a source opened mid-flight shows the whole track at once. The server only polls while
-the active show uses the module (not in demo), or for the aircraft given with `--watch`.
+so a source opened mid-flight shows the whole track at once. The extension only polls
+while the active show uses the module (not in demo), or for the aircraft given in `watch`.
 
-| Server option | |
-|---|---|
-| `--every N` | Seconds between two requests to the same API (default `5`, minimum `2`). |
-| `--watch HEX[,HEX…]` | Aircraft to record from startup, whatever the show. |
-| `--log DIR` | Where the recordings go (default `flight-log/`). |
+Its options go in the bundle's configuration, `cfg/EclipseGraphics.json`:
+`{"modules": {"a350f": {"every": 5, "watch": "39856b", "log": "flight-log"}}}`.
 
-| Route | |
+| Option | |
 |---|---|
-| `GET /adsb/hex/<hex>` · `/adsb/reg/<reg>` · `/adsb/callsign/<cs>` | The aircraft, as the APIs give it. |
-| `GET /adsb/history/<hex>[?since=<ms>][&raw]` | The recording, oldest first. |
-| `GET /wx/<ICAO>` | The airport's METAR ([aviationweather.gov](https://aviationweather.gov)), cached 5 min. |
-| `GET /flight-log/<file>` | A day's recording as written. |
+| `every` | Seconds between two requests to the same API (default `5`, minimum `2`). |
+| `watch` | Aircraft to record from startup, whatever the show (`"hex,hex"`). |
+| `log` | Where the recordings go (default `flight-log/`, in the bundle's folder). |
+
+| Route (under `/bundles/EclipseGraphics/`) | |
+|---|---|
+| `GET adsb/hex/<hex>` · `adsb/reg/<reg>` · `adsb/callsign/<cs>` | The aircraft, as the APIs give it. |
+| `GET adsb/history/<hex>[?since=<ms>][&raw]` | The recording, oldest first. |
+| `GET wx/<ICAO>` | The airport's METAR ([aviationweather.gov](https://aviationweather.gov)), cached 5 min. |
+| `GET flight-log/<file>` | A day's recording as written. |
 
 ## Settings
 
 Aircraft (registration, Mode S address, callsign, MSN), schedule (day, planned take-off
 and landing — or a planned duration —, the actual take-off when ADS-B missed it), data
-(another server's relay, polling period), basemap (tile template `{z}/{x}/{y}` or `none`,
+(another machine's relay, `http://<host>:9090/bundles/EclipseGraphics`; polling period), basemap (tile template `{z}/{x}/{y}` or `none`,
 recolouring, credit; OpenStreetMap by default, fine for one broadcast under its
 [tile policy](https://operations.osmfoundation.org/policies/tiles/)), units, recap, the
 graphics it drives, and a synthetic demo flight (speed, start point, a simulated squawk).

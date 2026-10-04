@@ -73,7 +73,7 @@ exports.init = function (ctx) {
     clearInterval(loop); loop = null;
     if (!ctx.enabled()) return;
     tick();
-    loop = setInterval(tick, 1000);
+    loop = setInterval(ctx.guard(tick), 1000);
   }
   function step(c, d) {
     const w = where(c.settings, c.state, Date.now());

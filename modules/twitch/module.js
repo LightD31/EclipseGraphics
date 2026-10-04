@@ -23,6 +23,7 @@
     graphics: { chat: 'chat.js' },
     css: ['chat.css'],
     panel: 'panel.js',
+    panelWidth: 4,   /* its panel in NodeCG's dashboard (scripts/panels.js) */
     settings: [
       { title: 'Chaîne', fields: [
         { key: 'channel', type: 'text', label: 'Chaîne Twitch', default: '', placeholder: 'nom de la chaîne',

@@ -3,14 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Régie · habillage</title>
-<!-- The operator's page, never on air: http://127.0.0.1:8787/panel.html
-     (also works as an OBS custom browser dock). Everything is saved as you
-     type and shows on the outputs at once. -->
+<title>À l'antenne · habillage</title>
+<!-- The rundown alone, as a panel of the NodeCG dashboard's main workspace
+     (next to other bundles' panels): the Régie's page, its editors and
+     preview hidden (body.compact). Keep its markup the Régie's. -->
+<base href="../">
 <link rel="stylesheet" href="engine/fonts/fonts.css">
 <link rel="stylesheet" href="engine/panel/panel.css">
 </head>
-<body>
+<body class="compact">
 <header id="top">
   <h1><span class="tag">Régie</span><span id="showTitle">…</span></h1>
   <select id="showPick" title="Projet actif"></select>
@@ -49,7 +50,7 @@
         <button id="bReplay" class="small ghost" title="Rejoue l'entrée du graphique sélectionné dans l'aperçu">▶ Rejouer l'entrée</button>
         <span class="pv-hint" title="Cliquez un graphique dans l'aperçu pour le choisir ; glissez-le pour le placer ; flèches : 1 px, Maj : 10 px">✥ glissez un graphique pour le déplacer</span>
         <span class="sp"></span>
-        <a id="outLink" href="overlay.html" target="_blank" rel="noopener">ouvrir la sortie ↗</a>
+        <a id="outLink" href="graphics/overlay.html" target="_blank" rel="noopener">ouvrir la sortie ↗</a>
       </div>
     </div>
     <nav id="tabs">
@@ -76,6 +77,7 @@
 <script src="engine/graphics/bug.js"></script>
 <script src="engine/graphics/card.js"></script>
 <script src="engine/panel/forms.js"></script>
+<script src="engine/panel/link.js"></script>
 <script src="engine/panel/panel.js"></script>
 </body>
 </html>

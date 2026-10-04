@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Le projet actif",
+  "description": "Écrit par l'extension seulement : on le modifie par les messages show:patch, show:save et shows.",
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Le nom de son fichier (shows/<name>.json)."
+    },
+    "rev": {
+      "type": "integer",
+      "description": "Sa révision : +1 à chaque modification."
+    },
+    "by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "L'éditeur de la dernière modification (sa page), s'il s'est nommé."
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "theme": {
+          "type": "object"
+        },
+        "motion": {
+          "type": "object"
+        },
+        "modules": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "settings": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "graphics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Son identifiant : celui des commandes."
+              },
+              "type": {
+                "type": "string",
+                "description": "bandeau, synthe, flash, ticker, bug, card, ou un type de module."
+              },
+              "name": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "object",
+                "description": "Ses champs, comme les décrit le schéma de son type (engine/graphics/, modules/)."
+              },
+              "motion": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

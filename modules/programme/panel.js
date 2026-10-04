@@ -7,7 +7,7 @@
     var box = h('div', { class: 'modctl' });
     el.appendChild(box);
     var list = (s.items || []).filter(function (it) { return it && (it.title || it.time); });
-    if (!list.length) { box.appendChild(h('div', { class: 'sub', text: 'Programme vide : ajoutez des sujets dans l\'onglet Modules.' })); return {}; }
+    if (!list.length) { box.appendChild(h('div', { class: 'sub', text: 'Programme vide : ajoutez des sujets dans les réglages du module.' })); return {}; }
     var now = h('b', { text: '—' }), nowAt = h('span', { class: 'sub' }), pos = h('span', { class: 'sub' });
     var next = h('span', { text: '—' }), when = h('span', { class: 'sub' });
     var mode = h('span', { class: 'sub' }), shift = h('b', { text: '0 min', style: 'min-width:64px;text-align:center' });

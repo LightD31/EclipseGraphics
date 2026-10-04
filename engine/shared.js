@@ -149,11 +149,21 @@
     }
     return out;
   }
+  /* Paths are dot-separated keys; in a list, "#<id>" is the element with that
+     id ("graphics.#bandeau.fields.title"), a number an element by index */
+  function step(obj, k) {
+    if (obj == null) return undefined;
+    if (k.charAt(0) === '#' && Array.isArray(obj)) {
+      for (var i = 0; i < obj.length; i++) if (obj[i] && obj[i].id === k.slice(1)) return obj[i];
+      return undefined;
+    }
+    return obj[k];
+  }
   function getPath(obj, path) {
     var parts = Array.isArray(path) ? path : String(path).split('.');
     for (var i = 0; i < parts.length; i++) {
       if (obj == null) return undefined;
-      obj = obj[parts[i]];
+      obj = step(obj, parts[i]);
     }
     return obj;
   }
@@ -165,6 +175,84 @@
     }
     obj[parts[parts.length - 1]] = value;
   }
+  // ===== Edits as operations =====
+  /* Two editors (two Régies, a module's panel) change a show at once: each
+     sends what it changed — { path, value } or { path, delete: true } — and
+     the extension applies it to the show as it is, so nobody's edit undoes
+     another's. Lists of elements with ids are followed element by element
+     (a graphic moved or added replaces the whole list). */
+  function keyed(list) {
+    if (!Array.isArray(list) || !list.length) return false;
+    var seen = {};
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      if (!isObj(x) || typeof x.id !== 'string' || !x.id || seen[x.id]) return false;
+      seen[x.id] = true;
+    }
+    return true;
+  }
+  /* what changed from a to b → [op] */
+  function diff(a, b, path, out) {
+    out = out || []; path = path || '';
+    var at = function (k) { return path ? path + '.' + k : String(k); };
+    if (a === b) return out;
+    if (isObj(a) && isObj(b)) {
+      Object.keys(a).forEach(function (k) { if (b[k] === undefined && a[k] !== undefined) out.push({ path: at(k), delete: true }); });
+      Object.keys(b).forEach(function (k) {
+        if (b[k] === undefined) return;
+        if (a[k] === undefined) out.push({ path: at(k), value: clone(b[k]) });
+        else diff(a[k], b[k], at(k), out);
+      });
+      return out;
+    }
+    if (keyed(a) && keyed(b) && a.length === b.length && a.every(function (x, i) { return x.id === b[i].id; })) {
+      a.forEach(function (x, i) { diff(x, b[i], at('#' + x.id), out); });
+      return out;
+    }
+    if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path: path, value: clone(b) });
+    return out;
+  }
+  /* A path's keys never reach an object's inner workings (__proto__…): the
+     ops come from elsewhere, in messages */
+  function safeKey(k) { return !!k && k !== '__proto__' && k !== 'constructor' && k !== 'prototype'; }
+  function safePath(path) { return typeof path === 'string' && path.split('.').every(safeKey); }
+  /* op applied to obj (in place) → false when its place is gone (an element
+     deleted elsewhere in the meantime: the edit has nothing left to change),
+     or its path is not one */
+  function applyOp(obj, op) {
+    if (!op || !safePath(op.path)) return false;
+    var parts = op.path.split('.');
+    var cur = obj;
+    for (var i = 0; i < parts.length - 1; i++) {
+      var k = parts[i], next = step(cur, k);
+      if (next == null || typeof next !== 'object') {
+        if (op.delete || k.charAt(0) === '#' || Array.isArray(cur)) return false;
+        next = cur[k] = {};
+      }
+      cur = next;
+    }
+    var last = parts[parts.length - 1];
+    if (last.charAt(0) === '#' && Array.isArray(cur)) {
+      var id = last.slice(1), idx = -1;
+      for (var j = 0; j < cur.length; j++) if (cur[j] && cur[j].id === id) { idx = j; break; }
+      if (op.delete) { if (idx >= 0) cur.splice(idx, 1); return idx >= 0; }
+      if (idx >= 0) cur[idx] = clone(op.value); else cur.push(clone(op.value));
+      return true;
+    }
+    if (op.delete) {
+      if (Array.isArray(cur)) { if (/^\d+$/.test(last) && +last < cur.length) cur.splice(+last, 1); }
+      else delete cur[last];
+      return true;
+    }
+    cur[last] = clone(op.value);
+    return true;
+  }
+  /* the op that takes op back, from the state it was applied to */
+  function inverseOp(base, op) {
+    var v = getPath(base, op.path);
+    return v === undefined ? { path: op.path, delete: true } : { path: op.path, value: clone(v) };
+  }
+
   /* A schema is a list of sections { title, fields: [field…] }; a field has
      a key (a dot path into the object) and a default. Lists carry their own
      item schema (a flat list of fields). → the object of defaults */
@@ -191,6 +279,7 @@
     pad: pad, hms: hms, hm: hm, longDate: longDate, dayMonth: dayMonth, weekday: weekday, shortDate: shortDate,
     clock: clock, coarse: coarse, render: render, refs: refs,
     clone: clone, isObj: isObj, withDefaults: withDefaults, getPath: getPath, setPath: setPath,
+    diff: diff, applyOp: applyOp, inverseOp: inverseOp, safePath: safePath,
     schemaDefaults: schemaDefaults, itemDefaults: itemDefaults, slug: slug, fr: fr
   };
 });

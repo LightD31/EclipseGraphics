@@ -145,8 +145,8 @@ exports.init = function (ctx) {
   async function fetchText(url) {
     const local = /^\/?media\/([^/?#]+)$/.exec(url);
     if (local) {
-      const name = path.basename(decodeURIComponent(local[1])), file = path.join(ctx.mediaDir, name);
-      if (!fs.existsSync(file)) throw new Error('fichier introuvable dans les médias : ' + name);
+      const name = path.basename(decodeURIComponent(local[1])), file = ctx.mediaFile(name);
+      if (!file) throw new Error('fichier introuvable dans les médias : ' + name);
       if (fs.statSync(file).size > MAX_BYTES) throw new Error('fichier trop gros (plus de 2 Mo)');
       const buf = fs.readFileSync(file);
       return decodeBuf(buf, prolog(buf));

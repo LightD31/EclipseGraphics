@@ -34,6 +34,7 @@
     client: ['places.js', 'client.js'],
     css: ['client.css'],
     panel: 'panel.js',
+    panelWidth: 4,   /* its panel in NodeCG's dashboard (scripts/panels.js) */
     visuals: {
       map: { label: 'Carte en direct' },
       profile: { label: 'Profil de vol (altitude, vitesse)' }
@@ -63,7 +64,7 @@
       ] },
       { title: 'Données', fields: [
         { key: 'relay', type: 'text', label: 'Relais ADS-B', default: '', placeholder: 'intégré à ce serveur',
-          help: 'vide : le relais de ce serveur ; ou l\'URL d\'un autre serveur d\'habillage qui suit le même avion (par ex. http://192.168.1.20:8787)' },
+          help: 'vide : le relais de ce serveur ; ou l\'adresse du bundle sur une autre machine qui suit le même avion (par ex. http://192.168.1.20:9090/bundles/EclipseGraphics)' },
         { key: 'poll', type: 'number', label: 'Interroger le relais toutes les', default: 2, min: 1, max: 30, unit: 's' }
       ] },
       { title: 'Carte', fields: [

@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Les réglages de cette machine",
+  "description": "Le lien OBS et Companion ; le mot de passe OBS ne quitte pas l'extension (masqué).",
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "active": {
+      "type": "string"
+    },
+    "obs": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "companion": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "host": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

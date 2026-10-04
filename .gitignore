@@ -1,8 +1,17 @@
+# NodeCG, when it runs from this folder (npm start): the package itself, and
+# what it keeps next to it — its configuration, database, uploaded assets
+# (the media library) and logs
+node_modules/
+cfg/
+db/
+assets/
+logs/
+
 # flight recordings written by the A350F module's relay
 flight-log/
 
-# the overlay server's runtime state on this machine: settings (OBS password),
-# what is on air per show — and the previous versions of edited shows
+# the bundle's runtime state on this machine: settings (OBS password), what
+# is on air per show — and the previous versions of edited shows
 data/
 shows/*.bak
 shows/*.tmp

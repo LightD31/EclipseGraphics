@@ -11,7 +11,7 @@
   var schema = [
     { title: 'Minuteur', fields: [
       { key: 'timer', type: 'select', label: 'Minuteur', default: '', options: 'mod:chrono.timers',
-        help: 'un des minuteurs du module Minuteurs (réglés dans l\'onglet Modules)' },
+        help: 'un des minuteurs du module Minuteurs (réglés dans ses réglages)' },
       { key: 'label', type: 'text', label: 'Libellé', default: '', vars: true, placeholder: 'le nom du minuteur',
         help: 'vide : le nom du minuteur ; « - » : pas de libellé' },
       { key: 'style', type: 'select', label: 'Forme', default: 'pastille',

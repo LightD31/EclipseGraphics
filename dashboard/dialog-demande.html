@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Confirmer · habillage</title>
+<!-- NodeCG's dialog « Confirmer »: a question from the Régie or a module's
+     panel (GFXLink.ask), with an answer field when a name is asked for. Its
+     buttons are NodeCG's (package.json, dialogButtons); Entrée confirms. -->
+<base href="../">
+<link rel="stylesheet" href="engine/fonts/fonts.css">
+<link rel="stylesheet" href="engine/panel/panel.css">
+</head>
+<body class="dialog">
+<p id="q"></p>
+<input id="a" type="text" hidden>
+<script>
+  /* ask({ text, input, placeholder }) → true / false, or the text / null */
+  window.GFXDemande = (function () {
+    'use strict';
+    var q = document.getElementById('q'), a = document.getElementById('a'), answer = null;
+    function done(yes) {
+      if (!answer) return;
+      var give = answer;
+      answer = null;
+      give(a.hidden ? yes : yes ? a.value : null);
+    }
+    document.addEventListener('dialog-confirmed', function () { done(true); });
+    document.addEventListener('dialog-dismissed', function () { done(false); });
+    /* Entrée in the field: NodeCG's confirm button */
+    a.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      var d = window.frameElement && window.frameElement.closest('ncg-dialog');
+      var ok = d && d.querySelector('[dialog-confirm]');
+      if (ok) ok.click();
+    });
+    return {
+      ask: function (o) {
+        done(false);
+        q.textContent = o.text || '';
+        a.hidden = o.input == null;
+        a.value = o.input == null ? '' : String(o.input);
+        a.placeholder = o.placeholder || '';
+        if (!a.hidden) setTimeout(function () { a.focus(); a.select(); }, 60);
+        return new Promise(function (resolve) { answer = resolve; });
+      }
+    };
+  })();
+</script>
+</body>
+</html>

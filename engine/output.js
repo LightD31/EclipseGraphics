@@ -101,6 +101,9 @@
       if (mod && mod.inst && mod.inst.onCommand) try { mod.inst.onCommand(d.cmd, d.text); } catch (err) { console.error(err); }
     });
     ncg.listenFor('reload', function () { location.reload(); });
+    /* a module's sound (a countdown at zero…): the page the extension picked
+       plays it (the module's leader, else an output), once */
+    ncg.listenFor('sound', function (d) { if (d && d.to === CID) playCue(d.cue); });
     /* hello: now, again with the modules once they run, when the socket
        comes back (a new one) and every 10 s */
     register();
@@ -111,7 +114,7 @@
      reports its variables: the leader), and the extension's clock */
   function register() {
     var t0 = Date.now();
-    return send('client', { id: CID, role: 'output', modules: Object.keys(S.mods), only: ONLY.join(','),
+    return send('client', { id: CID, role: 'output', preview: PREVIEW, modules: Object.keys(S.mods), only: ONLY.join(','),
                             socket: ncg.socket ? ncg.socket.id : '', ua: navigator.userAgent.slice(0, 120) }).then(function (j) {
       if (!j || !j.ok) return;
       S.offset = j.now - (t0 + Date.now()) / 2;
@@ -273,8 +276,17 @@
       else if (!want && G.onAir) playOut(G);
     });
   }
+  /* A sound cue of the bundle (package.json, nodecg.soundCues: its file and
+     volume are set in NodeCG's Mixer); never in the Régie's preview. OBS
+     hears it with the source's « Contrôler l'audio via OBS ». */
+  function playCue(name) {
+    if (!name || PREVIEW || !ncg.findCue || !ncg.findCue(name)) return;
+    try { ncg.playSound(name); } catch (e) { console.warn('son ' + name + ' : ' + e.message); }
+  }
+  function entranceSound(G) { playCue(G.conf.motion && G.conf.motion.sound); }
   function swapFlash(G, item) {
     G.itemId = item.id;
+    entranceSound(G);   /* a flash: every message comes in with its sound */
     var cfg = motionCfg(G);
     if (G.anim) G.anim.cancel();
     var h = G.anim = M.play(G.inst.parts(), 'out', cfg);
@@ -296,6 +308,7 @@
     }
     if (prev) prev.cancel();
     G.root.dataset.air = 'on';
+    entranceSound(G);
     if (G.inst.onIn) try { G.inst.onIn(); } catch (e) { console.error(e); }
     var h = G.anim = M.play(G.inst.parts(), 'in', motionCfg(G));
     G.root.style.visibility = '';

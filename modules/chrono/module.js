@@ -59,7 +59,7 @@
       out.push({
         id: id, label: String(t.label || id), mode: t.mode === 'up' ? 'up' : 'down',
         dur: dur == null ? 300000 : dur, format: t.format || 'auto', end: t.end === 'over' ? 'over' : 'stop',
-        endText: String(t.endText || ''), flash: String(t.flash || '')
+        endText: String(t.endText || ''), flash: String(t.flash || ''), sound: String(t.sound || '')
       });
     });
     return out;
@@ -82,7 +82,7 @@
     settings: [
       { title: 'Minuteurs', open: true, fields: [
         { key: 'timers', type: 'list', label: 'Minuteurs', add: 'Ajouter un minuteur', itemLabel: '{{label}}',
-          default: [{ label: 'Minuteur', id: 'minuteur', mode: 'down', duration: '05:00', format: 'auto', end: 'stop', endText: '', flash: '' }],
+          default: [{ label: 'Minuteur', id: 'minuteur', mode: 'down', duration: '05:00', format: 'auto', end: 'stop', endText: '', flash: '', sound: '' }],
           item: [
             { key: 'label', type: 'text', label: 'Nom', default: 'Minuteur' },
             { key: 'id', type: 'text', label: 'Identifiant', default: '', placeholder: 'debat',
@@ -96,7 +96,9 @@
               options: [['stop', 's\'arrête à zéro'], ['over', 'continue : +00:12 de dépassement']] },
             { key: 'endText', type: 'text', label: 'Texte à zéro', default: '', placeholder: '00:00', showIf: down },
             { key: 'flash', type: 'text', label: 'Flash à zéro', default: '', placeholder: 'Temps écoulé', showIf: down,
-              help: 'un message dans le flash du projet quand le compte à rebours arrive à zéro' }
+              help: 'un message dans le flash du projet quand le compte à rebours arrive à zéro' },
+            { key: 'sound', type: 'select', label: 'Son à zéro', default: '', options: 'soundCues', showIf: down,
+              help: 'joué une fois, par une sortie (jamais l\'aperçu) ; volume et fichier : onglet Mixer de NodeCG' }
           ] }
       ] }
     ],

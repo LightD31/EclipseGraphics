@@ -9,7 +9,8 @@
     "url": "git+https://github.com/LightD31/EclipseGraphics.git"
   },
   "scripts": {
-    "start": "node start.js"
+    "start": "node start.js",
+    "panels": "node scripts/panels.js"
   },
   "devDependencies": {
     "nodecg": "^2.8.0"
@@ -29,6 +30,92 @@
         "file": "antenne.html",
         "width": 3,
         "headerColor": "#10173a"
+      },
+      {
+        "name": "module-twitch",
+        "title": "Chat Twitch",
+        "file": "module-twitch.html",
+        "width": 4,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "module-eclipse",
+        "title": "Éclipse solaire",
+        "file": "module-eclipse.html",
+        "width": 3,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "module-flux",
+        "title": "Flux de données",
+        "file": "module-flux.html",
+        "width": 3,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "module-meteo",
+        "title": "Météo",
+        "file": "module-meteo.html",
+        "width": 3,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "module-chrono",
+        "title": "Minuteurs",
+        "file": "module-chrono.html",
+        "width": 3,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "module-a350f",
+        "title": "Premier vol A350F",
+        "file": "module-a350f.html",
+        "width": 4,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "module-programme",
+        "title": "Programme",
+        "file": "module-programme.html",
+        "width": 3,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "module-score",
+        "title": "Tableau de score",
+        "file": "module-score.html",
+        "width": 3,
+        "headerColor": "#10173a"
+      },
+      {
+        "name": "demande",
+        "title": "Confirmer",
+        "file": "dialog-demande.html",
+        "width": 4,
+        "dialog": true,
+        "dialogButtons": [
+          {
+            "name": "Annuler",
+            "type": "dismiss"
+          },
+          {
+            "name": "OK",
+            "type": "confirm"
+          }
+        ]
+      },
+      {
+        "name": "reglages",
+        "title": "Réglages du module",
+        "file": "dialog-reglages.html",
+        "width": 6,
+        "dialog": true,
+        "dialogButtons": [
+          {
+            "name": "Fermer",
+            "type": "dismiss"
+          }
+        ]
       }
     ],
     "graphics": [
@@ -40,14 +127,78 @@
       }
     ],
     "mount": [
-      { "directory": "engine", "endpoint": "engine" },
-      { "directory": "modules", "endpoint": "modules" }
+      {
+        "directory": "engine",
+        "endpoint": "engine"
+      },
+      {
+        "directory": "modules",
+        "endpoint": "modules"
+      }
     ],
     "assetCategories": [
       {
-        "name": "media",
-        "title": "Médias de l'habillage",
-        "allowedTypes": ["png", "jpg", "jpeg", "gif", "webp", "svg", "woff2", "woff", "ttf", "otf", "webm", "mp4", "csv", "json", "xml", "rss", "txt"]
+        "name": "images",
+        "title": "Images de l'habillage",
+        "allowedTypes": [
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "webp",
+          "svg"
+        ]
+      },
+      {
+        "name": "videos",
+        "title": "Vidéos de l'habillage",
+        "allowedTypes": [
+          "webm",
+          "mp4"
+        ]
+      },
+      {
+        "name": "polices",
+        "title": "Polices de l'habillage",
+        "allowedTypes": [
+          "woff2",
+          "woff",
+          "ttf",
+          "otf"
+        ]
+      },
+      {
+        "name": "donnees",
+        "title": "Fichiers de données (flux)",
+        "allowedTypes": [
+          "csv",
+          "json",
+          "xml",
+          "rss",
+          "txt"
+        ]
+      }
+    ],
+    "soundCues": [
+      {
+        "name": "entree",
+        "defaultFile": "sounds/entree.mp3",
+        "defaultVolume": 60
+      },
+      {
+        "name": "flash",
+        "defaultFile": "sounds/flash.mp3",
+        "defaultVolume": 60
+      },
+      {
+        "name": "point",
+        "defaultFile": "sounds/point.mp3",
+        "defaultVolume": 70
+      },
+      {
+        "name": "alerte",
+        "defaultFile": "sounds/alerte.mp3",
+        "defaultVolume": 60
       }
     ]
   }

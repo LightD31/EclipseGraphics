@@ -23,7 +23,7 @@
       "enabled": true,
       "settings": {
         "timers": [
-          { "label": "Temps de parole", "id": "parole", "mode": "down", "duration": "02:00", "format": "auto", "end": "over", "endText": "", "flash": "" }
+          { "label": "Temps de parole", "id": "parole", "mode": "down", "duration": "02:00", "format": "auto", "end": "over", "endText": "", "flash": "", "sound": "alerte" }
         ]
       }
     },

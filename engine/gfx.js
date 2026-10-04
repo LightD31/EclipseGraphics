@@ -171,7 +171,9 @@
             help: 'vide : celui du projet (onglet Animations)' },
           { key: '@motion.speed', type: 'range', label: 'Vitesse', default: '', min: 0.5, max: 2, step: 0.05, unit: '×', empty: 'projet' },
           { key: '@motion.change', type: 'select', label: 'Changement de texte à l\'antenne', default: '',
-            options: [['', 'comme le projet'], ['fade', 'fondu'], ['slide', 'glisse'], ['none', 'aucun']] }
+            options: [['', 'comme le projet'], ['fade', 'fondu'], ['slide', 'glisse'], ['none', 'aucun']] },
+          { key: '@motion.sound', type: 'select', label: 'Son à l\'entrée', default: '', options: 'soundCues',
+            help: 'un son du bundle, joué par les sorties qui montrent ce graphique (volume et fichier : onglet Mixer de NodeCG)' }
         ]
       };
     },

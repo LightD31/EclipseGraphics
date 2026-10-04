@@ -34,6 +34,7 @@
     client: ['places.js', 'client.js'],
     css: ['client.css'],
     panel: 'panel.js',
+    panelWidth: 4,   /* its panel in NodeCG's dashboard (scripts/panels.js) */
     visuals: {
       map: { label: 'Carte en direct' },
       profile: { label: 'Profil de vol (altitude, vitesse)' }

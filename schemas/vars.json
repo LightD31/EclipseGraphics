@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Les variables des modules",
+  "description": "{<module>: {<nom>: valeur}} : ce que chaque module calcule ou reçoit ({{<module>.<nom>}} dans un texte).",
+  "type": [
+    "object",
+    "null"
+  ],
+  "additionalProperties": {
+    "type": "object"
+  }
+}

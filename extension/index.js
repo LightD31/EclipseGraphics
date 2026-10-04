@@ -12,10 +12,12 @@
                          settings (OBS link, Companion, active show) and each
                          show's live state (what is on air, layouts, module
                          controls), so a restart picks up where it left off.
-     NodeCG's assets     the media library (images, videos, fonts, data
-                         files): the "Médias de l'habillage" category,
-                         uploaded from the Régie or NodeCG's Assets page;
-                         media/ holds the examples the demo shows use.
+     NodeCG's assets     the media library, a category per kind (Images,
+                         Vidéos, Polices, Données), uploaded from the Régie
+                         or NodeCG's Assets page; media/ holds the examples
+                         the demo shows use.
+     sounds/             the sound cues' default files (NodeCG's Mixer sets
+                         each cue's file and volume).
      modules/<id>/       data modules: module.js describes the module
                          (settings, views, commands) for this extension, the
                          Régie and the output alike; client.js runs in the
@@ -38,14 +40,21 @@
 
    What they send: messages to this bundle, answered { ok, error, … }
      cmd {target, cmd, text}              a command, as Companion's
-     show:save {rev, config, by}          the Régie's edits
+     show:patch {ops, by}                 an edit, as what changed (the ops
+                                          of GFXShared.diff): pages edit at once
+     show:save {rev, config, by}          a whole show, at its revision
      shows {action: create|duplicate|rename|delete|activate|import, …}
      settings:save {obs, companion}
      client {id, role, modules, only, socket}   a page says hello (again every 10 s)
      vars {id, m, v} · flash {id, m, item, front}   an output's module reports
      mod:status {m}                       a module's server part, for its panel
    and from here to them: leader {id, modules} · module {m, cmd, text} ·
-   mod {m, event, data} (a module's panel part) · reload
+   mod {m, event, data} (a module's panel part) · sound {to, m, cue} (the
+   page that plays a module's sound) · reload
+
+   The Replicants have JSON schemas (schemas/). The dashboard: the Régie
+   (fullbleed), « À l'antenne » and one panel per module (scripts/panels.js
+   makes them), NodeCG's dialogs « Confirmer » and « Réglages du module ».
 
    HTTP, under /bundles/EclipseGraphics/ (NodeCG's login applies when it is
    on: Companion adds ?key=<the user's key>)
@@ -83,9 +92,11 @@ module.exports = function (nodecg) {
   const CFG = nodecg.bundleConfig || {};
   const SHOWS_DIR = path.resolve(ROOT, CFG.showsDir || 'shows');
   const DATA_DIR = path.resolve(ROOT, CFG.dataDir || 'data');
-  /* the media library: NodeCG's assets of the "media" category, then the
-     examples that come with the bundle */
-  const ASSETS_DIR = path.join(runtimeRoot(), 'assets', BUNDLE, 'media');
+  /* the media library: NodeCG's assets of the bundle, one category per kind
+     of file (package.json, nodecg.assetCategories), then the examples that
+     come with the bundle */
+  const MEDIA_KINDS = { images: 'image', videos: 'video', polices: 'font', donnees: 'data' };
+  const ASSETS_ROOT = path.join(runtimeRoot(), 'assets', BUNDLE);
   const EXAMPLES_DIR = path.join(ROOT, 'media');
   const ALLOW_HOSTS = (Array.isArray(CFG.allowHosts) ? CFG.allowHosts : []).map(s => String(s).trim().toLowerCase()).filter(Boolean);
   for (const d of [SHOWS_DIR, DATA_DIR, path.join(DATA_DIR, 'live')]) fs.mkdirSync(d, { recursive: true });
@@ -123,7 +134,21 @@ module.exports = function (nodecg) {
     obs: { enabled: false, host: '127.0.0.1', port: 4455, password: '' },
     companion: { enabled: false, host: '127.0.0.1:8000', prefix: 'gfx' },
   };
-  try { U.withDefaults(Object.assign(settings, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))), settings); } catch (e) { /* first run */ }
+  try {
+    const saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (U.isObj(saved)) {
+      if (typeof saved.active === 'string') settings.active = U.slug(saved.active) || settings.active;
+      for (const k of ['obs', 'companion']) if (U.isObj(saved[k])) Object.assign(settings[k], saved[k]);
+    }
+  } catch (e) { /* first run */ }
+  /* as the Régie and the settings' schema expect them, whatever the file said */
+  settings.obs.enabled = settings.obs.enabled === true;
+  settings.obs.host = String(settings.obs.host || '127.0.0.1');
+  settings.obs.port = Math.round(+settings.obs.port) > 0 && Math.round(+settings.obs.port) < 65536 ? Math.round(+settings.obs.port) : 4455;
+  settings.obs.password = String(settings.obs.password || '');
+  settings.companion.enabled = settings.companion.enabled === true;
+  settings.companion.host = String(settings.companion.host || '127.0.0.1:8000');
+  settings.companion.prefix = U.slug(settings.companion.prefix) || 'gfx';
   if (CFG.show) settings.active = U.slug(CFG.show) || settings.active;
   function saveSettings() { writeJSON(SETTINGS_FILE, settings); }
   function publicSettings() {
@@ -178,10 +203,15 @@ module.exports = function (nodecg) {
       timezone: typeof c.timezone === 'string' && validTz(c.timezone) ? c.timezone : 'Europe/Paris',
       theme: U.isObj(c.theme) ? c.theme : {},
       motion: U.isObj(c.motion) ? c.motion : {},
-      modules: U.isObj(c.modules) ? c.modules : {},
+      modules: {},
       variables: [],
       graphics: [],
     };
+    /* each module's entry: switched on or not, its settings */
+    for (const [id, m] of Object.entries(U.isObj(c.modules) ? c.modules : {})) {
+      if (!U.isObj(m) || !/^[\w-]+$/.test(id)) continue;
+      out.modules[id] = Object.assign({}, m, { enabled: m.enabled === true, settings: U.isObj(m.settings) ? m.settings : {} });
+    }
     const vseen = new Set();
     for (const v of Array.isArray(c.variables) ? c.variables : []) {
       const name = U.slug(v && v.name);
@@ -304,7 +334,10 @@ module.exports = function (nodecg) {
     for (const id of Object.keys(live.flash)) if (!ids.has(id)) delete live.flash[id];
     for (const id of enabledModules(show)) live.modules[id] = U.withDefaults(live.modules[id], U.clone(MODULES[id].state || {}));
     for (const v of show.variables) if (live.vars[v.name] === undefined) live.vars[v.name] = v.value;
-    for (const k of Object.keys(live.vars)) if (!show.variables.some(v => v.name === k)) delete live.vars[k];
+    for (const k of Object.keys(live.vars)) {
+      if (!show.variables.some(v => v.name === k)) delete live.vars[k];
+      else if (typeof live.vars[k] !== 'string') live.vars[k] = live.vars[k] == null ? '' : String(live.vars[k]);
+    }
     return live;
   }
   /* The views a bandeau's modules add to it (the A350F map's track | follow…) */
@@ -355,7 +388,7 @@ module.exports = function (nodecg) {
     if (!id) return fail('identifiant manquant');
     const old = clients.get(id);
     const c = {
-      id, role: d.role === 'panel' ? 'panel' : 'output',
+      id, role: d.role === 'panel' ? 'panel' : 'output', preview: !!d.preview,
       modules: (Array.isArray(d.modules) ? d.modules : []).filter(x => MODULES[x]),
       only: String(d.only || '').slice(0, 200), at: Date.now(), ua: String(d.ua || '').slice(0, 120), socket: String(d.socket || '').slice(0, 40),
     };
@@ -375,18 +408,36 @@ module.exports = function (nodecg) {
   const vars = {};          /* module → { name: value } */
   const leaders = {};       /* module → client id */
   function ledBy(id) { return Object.keys(leaders).filter(m => leaders[m] === id); }
+  /* A real output leads rather than the Régie's preview (which closes with
+     the dashboard, and plays no sound): a preview leads only while no output
+     runs the module, and hands over as soon as one does */
   function assignLeaders() {
     const want = active.config ? enabledModules() : [];
+    const before = Object.assign({}, leaders);
     for (const m of Object.keys(leaders)) if (!want.includes(m)) delete leaders[m];
-    const told = new Set();
     for (const m of want) {
-      const cur = clients.get(leaders[m]);
-      if (cur && cur.modules.includes(m)) continue;
-      const next = [...clients.values()].find(c => c.role === 'output' && c.modules.includes(m));
-      if (next) { leaders[m] = next.id; told.add(next.id); } else delete leaders[m];
+      const can = [...clients.values()].filter(c => c.role === 'output' && c.modules.includes(m));
+      const cur = can.find(c => c.id === leaders[m]);
+      const best = can.find(c => !c.preview) || can[0];
+      if (cur && (!cur.preview || cur === best)) continue;
+      if (best) leaders[m] = best.id; else delete leaders[m];
+    }
+    const told = new Set();
+    for (const m of new Set(Object.keys(before).concat(Object.keys(leaders)))) {
+      if (before[m] === leaders[m]) continue;
+      if (before[m] && clients.has(before[m])) told.add(before[m]);
+      if (leaders[m]) told.add(leaders[m]);
     }
     for (const id of told) nodecg.sendMessage('leader', { id, modules: ledBy(id) });
     if (told.size) statusChanged();
+  }
+
+  /* The page that plays a module's sound: its leader, else an output showing
+     everything, else any output — never the Régie's preview */
+  function soundPage(m) {
+    const outs = [...clients.values()].filter(c => c.role === 'output' && !c.preview);
+    const lead = outs.find(c => c.id === leaders[m]) || outs.find(c => !c.only) || outs[0];
+    return lead ? lead.id : null;
   }
 
   // ===== Commands =====
@@ -811,11 +862,20 @@ module.exports = function (nodecg) {
   /* images, videos, fonts, and data files a module can read (the flux
      module's CSV, JSON, RSS or text sources) */
   const MEDIA_EXT = /\.(png|jpe?g|gif|webp|svg|woff2?|ttf|otf|webm|mp4|csv|json|xml|rss|txt)$/i;
+  function kindOf(name) {
+    const ext = path.extname(name).toLowerCase();
+    return /woff2?|ttf|otf/.test(ext) ? 'font' : /webm|mp4/.test(ext) ? 'video' : /csv|json|xml|rss|txt/.test(ext) ? 'data' : 'image';
+  }
+  /* where a file of the library can be: its category's folder (by its
+     kind), any other category's (dropped there by hand), the examples */
+  function mediaDirs() {
+    return Object.keys(MEDIA_KINDS).map(c => [path.join(ASSETS_ROOT, c), c]).concat([[EXAMPLES_DIR, null]]);
+  }
   /* a file of the library by name: an uploaded one, else an example */
   function mediaFile(name) {
     name = path.basename(String(name || ''));
     if (!MEDIA_EXT.test(name) || name.startsWith('.')) return null;
-    for (const dir of [ASSETS_DIR, EXAMPLES_DIR]) {
+    for (const [dir] of mediaDirs()) {
       const file = path.join(dir, name);
       try { if (fs.statSync(file).isFile()) return file; } catch (e) { /* not there */ }
     }
@@ -823,7 +883,7 @@ module.exports = function (nodecg) {
   }
   function mediaList() {
     const out = [], seen = new Set();
-    for (const [dir, builtin] of [[ASSETS_DIR, false], [EXAMPLES_DIR, true]]) {
+    for (const [dir, category] of mediaDirs()) {
       let names = [];
       try { names = fs.readdirSync(dir); } catch (e) { continue; }
       for (const f of names) {
@@ -832,19 +892,19 @@ module.exports = function (nodecg) {
         try { st = fs.statSync(path.join(dir, f)); } catch (e) { continue; }
         if (!st.isFile()) continue;
         seen.add(f);
-        const ext = path.extname(f).toLowerCase();
-        out.push({ name: f, url: 'media/' + encodeURIComponent(f), size: st.size, mtime: st.mtimeMs, builtin,
-                   kind: /woff2?|ttf|otf/.test(ext) ? 'font' : /webm|mp4/.test(ext) ? 'video' : /csv|json|xml|rss|txt/.test(ext) ? 'data' : 'image' });
+        out.push({ name: f, url: 'media/' + encodeURIComponent(f), size: st.size, mtime: st.mtimeMs, kind: kindOf(f),
+                   category, builtin: !category });
       }
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
   }
   function publishMedia() { R.media.value = mediaList(); }
-  /* NodeCG keeps its list of the category's files up to date (uploads,
+  /* NodeCG keeps a list of each category's files up to date (uploads,
      deletions, files dropped in the folder): ours follows */
-  const assets = nodecg.Replicant('assets:media');
   let mediaTimer = null;
-  assets.on('change', () => { clearTimeout(mediaTimer); mediaTimer = setTimeout(guard('media', publishMedia), 150); });
+  for (const c of Object.keys(MEDIA_KINDS)) {
+    nodecg.Replicant('assets:' + c).on('change', () => { clearTimeout(mediaTimer); mediaTimer = setTimeout(guard('media', publishMedia), 150); });
+  }
 
   // ===== Status, for the Régie =====
   const BOOT = Date.now();
@@ -852,7 +912,7 @@ module.exports = function (nodecg) {
     return {
       version: VERSION, boot: BOOT, now: Date.now(), bundle: BUNDLE, nodecg: nodecg.config ? { host: nodecg.config.host, port: nodecg.config.port } : null,
       obs: { state: obs.state, error: obs.error }, companion: { state: settings.companion.enabled ? comp.state : 'off', error: comp.error, sent: comp.sent },
-      clients: [...clients.values()].map(c => ({ id: c.id, role: c.role, modules: c.modules, only: c.only, at: c.at, ua: c.ua })),
+      clients: [...clients.values()].map(c => ({ id: c.id, role: c.role, preview: c.preview, modules: c.modules, only: c.only, at: c.at, ua: c.ua })),
       leaders: Object.assign({}, leaders), log: logRing.slice(-80),
     };
   }
@@ -883,20 +943,43 @@ module.exports = function (nodecg) {
   }
   listen('cmd', (d) => runCommand(d.target, d.cmd, d.text, String(d.from || 'nodecg').slice(0, 20)));
   listen('client', hello);
-  listen('show:save', (d) => {
-    if (d.rev != null && d.rev !== active.rev) return fail('projet modifié ailleurs', { conflict: true, rev: active.rev, config: active.config });
-    const cfg = normalizeShow(d.config);
+  /* The active show replaced by a new version: saved (the previous one kept
+     as .bak), published, its live state and modules brought in step */
+  function commitShow(raw, by) {
+    const cfg = normalizeShow(raw);
     const modsBefore = enabledModules().join(',');
     writeJSON(showFile(active.name), cfg, true);
     active.config = cfg; active.rev++;
     lives[active.name] = initLive(cfg, lives[active.name]);
     moduleHooks();
-    publishShow(typeof d.by === 'string' ? d.by.slice(0, 40) : null);
+    publishShow(typeof by === 'string' ? by.slice(0, 40) : null);
     liveChanged({ quiet: true });
     companionAll();
     if (enabledModules().join(',') !== modsBefore) assignLeaders();
     modulesOnShow(cfg);
+    return cfg;
+  }
+  /* The whole show (an import, a program): refused when it was made from an
+     older version than the active one */
+  listen('show:save', (d) => {
+    if (d.rev != null && d.rev !== active.rev) return fail('projet modifié ailleurs', { conflict: true, rev: active.rev, config: active.config });
+    commitShow(d.config, d.by);
     return ok({ rev: active.rev });
+  });
+  /* What an editor changed (see U.diff): applied to the show as it is now,
+     so two Régies, or a module's panel and the Régie, never undo each
+     other's edits. → the show as it now is, for the editor to rebase on */
+  listen('show:patch', (d) => {
+    const ops = Array.isArray(d.ops) ? d.ops : [];
+    if (ops.length > 2000) return fail('trop de modifications à la fois');
+    if (!active.config) return fail('aucun projet ouvert');
+    /* a path of keys (never __proto__ and the like), a value or a deletion */
+    if (!ops.every(op => U.isObj(op) && U.safePath(op.path) && (op.delete === true || op.value !== undefined))) return fail('modification invalide');
+    const cfg = U.clone(active.config);
+    let applied = 0;
+    for (const op of ops) if (U.applyOp(cfg, op)) applied++;
+    if (applied) commitShow(cfg, d.by);
+    return ok({ rev: active.rev, config: active.config, applied });
   });
   listen('shows', (b) => {
     const name = U.slug(b.name);
@@ -946,7 +1029,7 @@ module.exports = function (nodecg) {
       const o = b.obs;
       if (typeof o.enabled === 'boolean') settings.obs.enabled = o.enabled;
       if (typeof o.host === 'string' && o.host.trim()) settings.obs.host = o.host.trim().slice(0, 100);
-      if (+o.port > 0 && +o.port < 65536) settings.obs.port = +o.port;
+      if (Math.round(+o.port) > 0 && Math.round(+o.port) < 65536) settings.obs.port = Math.round(+o.port);
       if (typeof o.password === 'string' && o.password !== '••••••••') settings.obs.password = o.password;
     }
     if (U.isObj(b.companion)) {
@@ -1115,8 +1198,17 @@ module.exports = function (nodecg) {
   function moduleContext(id) {
     const on = () => !!active.config && enabledModules().includes(id);
     const opts = U.isObj(CFG.modules) && U.isObj(CFG.modules[id]) ? CFG.modules[id] : {};
+    /* its lines in NodeCG's console under its own name, and in the Régie's log */
+    const logger = new nodecg.Logger(BUNDLE + ':' + id);
+    const modLog = (level, ...a) => {
+      const text = a.join(' ');
+      logRing.push({ at: Date.now(), level, text });
+      if (logRing.length > 200) logRing.shift();
+      if (level === 'warn') logger.warn(text); else logger.info(text);
+      statusChanged();
+    };
     return {
-      id, log, root: ROOT, dataDir: DATA_DIR, mediaDir: ASSETS_DIR, U, nodecg,
+      id, log: modLog, root: ROOT, dataDir: DATA_DIR, U, nodecg,
       /* an option from the bundle's configuration: modules.<id>.<name> */
       arg: (name, def) => (opts[name] == null ? def : Array.isArray(opts[name]) ? opts[name].join(',') : String(opts[name])),
       /* a file of the media library, by name (an upload, else an example): its path, or null */
@@ -1145,6 +1237,11 @@ module.exports = function (nodecg) {
       guard: (fn) => guard(id, fn),
       /* an event for the Régie (the module's panel.js gets it: onEvent(name, data)) */
       emit: (event, data) => nodecg.sendMessage('mod', { m: id, event, data }),
+      /* a sound cue of the bundle (NodeCG's Mixer), played once: sound('alerte') */
+      sound: (cue) => {
+        const to = on() && cue && soundPage(id);
+        if (to) nodecg.sendMessage('sound', { to, m: id, cue: String(cue) });
+      },
       now: () => moduleNow(id),
       tz: () => (active.config ? active.config.timezone : 'Europe/Paris'),
     };
@@ -1170,7 +1267,7 @@ module.exports = function (nodecg) {
   nodecg.mount('/bundles/' + BUNDLE, router);
   log('log', 'Régie        : le tableau de bord NodeCG, espace « Régie »');
   log('log', 'Sortie OBS   : /bundles/' + BUNDLE + '/graphics/overlay.html  (source navigateur 1920×1080)');
-  log('log', 'Médias       : ' + ASSETS_DIR);
+  log('log', 'Médias       : ' + ASSETS_ROOT + ' (' + Object.keys(MEDIA_KINDS).join(', ') + ')');
 
   function shutdown() {
     for (const id in moduleServers) if (moduleServers[id].stop) try { moduleServers[id].stop(); } catch (e) { /* exiting */ }

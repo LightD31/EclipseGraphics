@@ -58,6 +58,7 @@ exports.init = function (ctx) {
         if (!e.done && (e.run || e.acc)) {
           e.done = true; changed = true;
           if (t.flash) ctx.flash({ tag: t.label, title: t.flash, type: 'chrono' });
+          if (t.sound) ctx.sound(t.sound);
         }
       }
       const d = shown(t, e, now);

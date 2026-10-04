@@ -20,7 +20,7 @@
     var box = h('div', { class: 'modctl' });
     el.appendChild(box);
     if (!String(s.channel || '').trim()) {
-      box.appendChild(h('div', { class: 'sub', text: 'Indiquez la chaîne Twitch dans l\'onglet Modules.' }));
+      box.appendChild(h('div', { class: 'sub', text: 'Indiquez la chaîne Twitch dans les réglages du module.' }));
       return {};
     }
     var state = h('span', { class: 'sub', text: '…' }), air = h('span', { class: 'sub grow' });

@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Ce qui est à l'antenne",
+  "description": "L'état en direct du projet actif, écrit par l'extension ; on le change par des commandes (message cmd).",
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "graphics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "air": {
+            "type": "boolean"
+          },
+          "layout": {
+            "type": "string",
+            "description": "Le bandeau : lower, full ou recap."
+          },
+          "main": {
+            "type": "string"
+          },
+          "card": {
+            "type": "boolean"
+          },
+          "view": {
+            "type": "object"
+          },
+          "headline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entry": {
+            "type": "number",
+            "description": "Le synthé : le nom choisi (à partir de 0)."
+          },
+          "offAt": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "flash": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "queue": {
+            "type": "array"
+          },
+          "n": {
+            "type": "number"
+          },
+          "keys": {
+            "type": "array"
+          }
+        }
+      }
+    },
+    "modules": {
+      "type": "object",
+      "description": "L'état de chaque module (ses minuteurs, son score…)."
+    },
+    "vars": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Les valeurs des variables libres."
+    }
+  }
+}

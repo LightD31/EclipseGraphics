@@ -6,12 +6,14 @@ doesn't lose them (a timer that was running has kept running).
 
 ## Setting up
 
-In the Régie's **Modules** tab, switch *Minuteurs* on and add timers: a name, an
-identifier (the name of its commands and variable; taken from the name if empty), up or
-down, a duration for a countdown (`05:00`, `1:30:00`, `90s`, `1h30`; a bare number is in
-minutes), the display (`04:59`, `00:04:59`, minutes only, seconds only), and what a
-countdown does at zero: stop, or carry on in overtime (`+00:12`), with an optional text
-and a flash message.
+In the module's panel on NodeCG's dashboard (**⚙ Réglages**) or the Régie's **Modules**
+tab, switch *Minuteurs* on and add timers: a name, an identifier (the name of its
+commands and variable; taken from the name if empty), up or down, a duration for a
+countdown (`05:00`, `1:30:00`, `90s`, `1h30`; a bare number is in minutes), the display
+(`04:59`, `00:04:59`, minutes only, seconds only), and what a countdown does at zero:
+stop, or carry on in overtime (`+00:12`), with an optional text, a flash message and a
+sound (« Son à zéro »: one of the bundle's cues, whose file and volume NodeCG's Mixer
+sets; one output plays it).
 
 Then show it:
 
@@ -23,8 +25,8 @@ Then show it:
 - or in any text as `{{chrono.<id>}}`: a bandeau's timer (mode « Texte / variable »), a
   fullscreen card's countdown, the corner bug's text, a scoreboard's time of play, a ticker.
 
-Each timer gets its buttons in the rundown: start / stop, reset, −1 min, −10 s, +10 s,
-+1 min, and a field to set a new duration.
+Each timer gets its buttons in the rundown and in the module's panel: start / stop,
+reset, −1 min, −10 s, +10 s, +1 min, and a field to set a new duration.
 
 ## Commands
 

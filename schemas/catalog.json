@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Les modules installés",
+  "description": "Écrit par l'extension au démarrage : les modules du dossier modules/ et les types de graphiques qu'ils apportent.",
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "La version du bundle."
+    },
+    "bundle": {
+      "type": "string"
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Les identifiants des modules."
+    },
+    "modTypes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Type de graphique → module qui l'apporte."
+    }
+  }
+}

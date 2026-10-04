@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "La médiathèque",
+  "description": "Les fichiers des catégories d'assets du bundle, et les exemples qu'il apporte (builtin). L'adresse (url) est relative au bundle.",
+  "type": [
+    "array",
+    "null"
+  ],
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "url": {
+        "type": "string"
+      },
+      "size": {
+        "type": "number"
+      },
+      "mtime": {
+        "type": "number"
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "image",
+          "video",
+          "font",
+          "data"
+        ]
+      },
+      "category": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "builtin": {
+        "type": "boolean"
+      }
+    }
+  }
+}

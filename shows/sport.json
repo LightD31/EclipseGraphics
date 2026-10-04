@@ -35,7 +35,7 @@
           { "tag": "VAR", "title": "Vérification vidéo en cours", "sub": "", "dur": "" },
           { "tag": "Changement", "title": "Remplacement", "sub": "", "dur": "" },
           { "tag": "Info", "title": "Temps additionnel : 3 minutes", "sub": "", "dur": "" }
-        ] }, "motion": {} },
+        ] }, "motion": { "sound": "point" } },
     { "id": "joueurs", "type": "synthe", "name": "Joueurs", "fields": {
         "entries": [
           { "name": "Camille Martin", "role": "Aigles de Garonne · n° 9", "extra": "", "image": "" },

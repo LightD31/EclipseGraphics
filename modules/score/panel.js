@@ -35,7 +35,7 @@
     box.appendChild(h('div', { class: 'line' }, [note, h('button', { class: 'small', text: 'Afficher', onclick: send }), b('Effacer', 'note.clear')]));
     box.appendChild(h('div', { class: 'line' }, [noteNow, h('span', { class: 'grow' }),
       h('button', { class: 'small ghost', text: '↺ Tout remettre à zéro', onclick: function () {
-        if (confirm('Remettre le score, les compteurs et la période à zéro ?')) api.cmd('reset');
+        api.ask('Remettre le score, les compteurs et la période à zéro ?').then(function (yes) { if (yes) api.cmd('reset'); });
       } })]));
     function refresh() {
       var v = api.vars();

@@ -4,9 +4,9 @@ Live graphics for OBS, driven from a control panel instead of code. A
 [NodeCG](https://www.nodecg.dev) bundle: its extension holds the show — its graphics and
 their texts, the theme, the animations, the data modules — and every OBS browser source
 (the bundle's NodeCG graphic) draws what it says. The operator edits and runs everything
-from the **Régie** (a workspace of NodeCG's dashboard, in French), from **Bitfocus
-Companion** (HTTP, or OBS "Broadcast Custom Event"), from another NodeCG bundle, or all at
-once.
+from the **Régie** (a workspace of NodeCG's dashboard, in French) and the modules' own
+dashboard panels, from **Bitfocus Companion** (HTTP, or OBS "Broadcast Custom Event"),
+from another NodeCG bundle, or all at once.
 
 What it draws, every part of it configurable in the Régie:
 
@@ -44,7 +44,7 @@ runs it with this bundle, from this folder. Then:
 
 | | |
 |---|---|
-| NodeCG's dashboard | <http://127.0.0.1:9090/> — the **Régie** workspace, and the **À l'antenne** panel (the rundown alone) in the main one |
+| NodeCG's dashboard | <http://127.0.0.1:9090/> — the **Régie** workspace; in the main one, **À l'antenne** (the rundown alone) and a panel per module |
 | OBS browser source | `http://127.0.0.1:9090/bundles/EclipseGraphics/graphics/overlay.html`, 1920 × 1080 (NodeCG's Graphics tab lists it too) |
 
 Already running NodeCG for other bundles? Install it as one of them instead:
@@ -96,9 +96,10 @@ NodeCG reads two files in its `cfg/` folder (this folder's, with `npm start`):
 
 ## The Régie
 
-The Régie is the dashboard's **Régie** workspace; the **À l'antenne** panel, in the main
-workspace, is its rundown alone, to keep next to other bundles' panels. Both follow the
-same show, as do several dashboards open at once.
+The Régie is the dashboard's **Régie** workspace. The main workspace has the panels to
+keep next to other bundles' ones: **À l'antenne** (the Régie's rundown alone) and one
+panel per module ([below](#the-module-panels)). They all follow the same show, as do
+several dashboards open at once.
 
 - **Rundown** (left) — every graphic of the show with its on-air button, and the
   controls it needs live: layouts, swap, corner card, the modules' views and a manual
@@ -136,7 +137,29 @@ same show, as do several dashboards open at once.
 - **Réglages** — the output URLs, the OBS link, Companion, the media library, the log.
 
 Every change is saved as it is made (`shows/<name>.json`, the previous version kept as
-`.json.bak`); **↶ Annuler** (Ctrl+Z) steps back. Two Régies open at once stay in sync.
+`.json.bak`). A page sends what it changed rather than the whole show, so the Régie, the
+module panels and other dashboards can edit at the same time: changes to different
+things are all kept, and each page takes the others' in as they come — a field being
+typed in waits until it is left. **↶ Annuler** (Ctrl+Z) takes back this page's own
+changes, never another's. Questions — deleting a graphic, a project or a file, switching
+projects while graphics are on air, a name to type — come in NodeCG's **Confirmer**
+dialog.
+
+### The module panels
+
+Each module has its panel in the dashboard's main workspace: a switch that turns it on
+or off in the active show, its live controls and state — the timers' buttons, the score,
+now and next with the takeover, the chat's queue, the weather's last update, the A350F's
+data… — and its variables, with their values and the tag to use in a text (click to
+copy). **⚙ Réglages** opens its settings in NodeCG's **Réglages du module** dialog: the
+switch, the form, the Companion commands it answers to, saved as they are typed. Outside
+the dashboard (the panel's page on its own, as an OBS dock:
+`…/bundles/EclipseGraphics/dashboard/module-chrono.html?standalone=true`), the settings
+unfold under the panel instead. The Régie's Modules tab still has them all in one place.
+
+The panels come from the modules' descriptors: after adding or removing a module
+(`modules/<id>/`), `npm run panels` writes its page (`dashboard/module-<id>.html`) and its
+entry in `package.json`; NodeCG shows it once restarted.
 
 ## Shows, variables and bindings
 
@@ -153,10 +176,11 @@ controls are the show's **live state**, kept by the extension in `data/live/<sho
 picks up where it left off.
 
 Images, videos, fonts and data files go in the **media library**: NodeCG's assets of the
-bundle, the « Médias de l'habillage » category. Import them in Réglages › Médias (or on
-NodeCG's Assets page); a field that takes an image offers them, and the output reads them
-as `media/<name>`. The examples the demo shows use (`media/` in the bundle) are always
-there.
+bundle, a category per kind — « Images de l'habillage », « Vidéos de l'habillage »,
+« Polices de l'habillage », « Fichiers de données (flux) ». Import them in Réglages ›
+Médias (each file goes to its kind's category) or on NodeCG's Assets page; a field that
+takes an image offers the images, and the output reads every file as `media/<name>`. The
+examples the demo shows use (`media/` in the bundle) are always there.
 
 Every text field takes bindings:
 
@@ -204,6 +228,21 @@ otherwise.
 Like the original overlays, graphics park when OBS hides their source and replay their
 entrance when it shows it again, so cutting to a scene brings them in with their
 animation; `overlay.html?noautoanim` leaves them to the commands alone.
+
+## Sounds
+
+The bundle has four sound cues, in NodeCG's **Mixer** tab: `entree` (a whoosh), `flash`
+(a chime), `point` (an arpeggio) and `alerte` (three beeps). The Mixer sets each cue's
+volume and its file — the bundle's (`sounds/`), or one of your own imported on NodeCG's
+Assets page (its « sounds » category). A graphic plays one as it comes on air: its form's
+Animations section, « Son à l'entrée » (a flash plays it for every message). A module can
+too — the timers' « Son à zéro ». The demos use them: the `sport` show's announcements
+play `point`, the `emission` show's speaking-time timer plays `alerte` at zero.
+
+The output pages play them — never the Régie's preview — and a module's sound is played
+by one output only. In OBS, tick the browser source's **Contrôler l'audio via OBS**
+("Control audio via OBS"): the sounds then go through OBS's mixer, with a fader of their
+own, into the stream and the recording.
 
 ## Commands
 
@@ -309,15 +348,18 @@ A module is a folder, `modules/<id>/` (the folder's name is its id):
   brings: `graphics` (`{ type: file }`, graphic types — `GFX.type(…)`, like
   `engine/graphics/*` —, loaded by the Régie and the outputs; a type's `move` says which
   of its elements the preview drags: see `engine/gfx.js`), `options` (lists its graphics'
-  forms offer, `options: 'mod:<id>.<name>'`), `client`, `css`, `panel`.
+  forms offer, `options: 'mod:<id>.<name>'`), `client`, `css`, `panel`; `panelWidth` (its
+  dashboard panel's width, in NodeCG's columns: 3 by default).
 - **`server.js`** (optional) — run by the extension: `exports.init(ctx)` → `{ routes,
   status(), onShow(config), commands, command, onCommand(name, value), stop() }`. `routes`
   are `[method, regex, handler(req, res, url, match)]`, matched on the path under
   `/bundles/EclipseGraphics/` (`/meteo/geocode`…). `ctx` gives the module's `settings()`
   and live `state()` (`changed()` after editing it), `setVars({…})` (variables for every
   output, the Régie and Companion), `flash(item)` (a banner in the show's flash),
-  `command(target, cmd, text)`, `emit(event, data)` (to its panel part), `activeShow()`,
-  `enabled()`, `now()`, `tz()`, `log()`, `guard(fn)` (a timer's function whose errors are
+  `sound(cue)` (a sound cue, played once by an output), `command(target, cmd, text)`,
+  `emit(event, data)` (to its panel part), `activeShow()`, `enabled()`, `now()`, `tz()`,
+  `log(level, text)` (`'log'` or `'warn'`: a line in NodeCG's log under the module's own
+  name, `EclipseGraphics:<id>`, and in the Régie's, Réglages › Serveur), `guard(fn)` (a timer's function whose errors are
   logged rather than stopping NodeCG: `setInterval(ctx.guard(tick), 1000)`), `arg(name,
   default)` (its options in the bundle's configuration: `modules.<id>.<name>`),
   `mediaFile(name)` (a file of the media library: its path, or `null`), `dataDir`, `root`,
@@ -334,20 +376,24 @@ A module is a folder, `modules/<id>/` (the folder's name is its id):
   variables, so two sources a tick apart never make them flicker; another takes over if it
   closes.
 - **`panel.js`** (optional) — `GFX.panel('<id>', { render(el, api), rundown(el, api) })`:
-  its view in the Modules tab, and live controls in a rundown card; each returns
-  `{ refresh(), onEvent(event, data), destroy() }` as it needs. `api` gives `cmd()`,
-  `vars()`, `state()`, `settings()`, `setting(key, value)`, `status()` (its server part's),
-  `h()` (to build elements), `toast()`.
+  its view in the Modules tab, live controls in a rundown card, both in its dashboard
+  panel; each returns `{ refresh(), onEvent(event, data), destroy() }` as it needs. `api`
+  gives `cmd()`, `vars()`, `state()`, `settings()`, `setting(key, value)`, `status()` (its
+  server part's), `ask({text, input})` (NodeCG's Confirmer dialog: a promise of `true` /
+  `false`, or of the text typed / `null`), `h()` (to build elements), `toast()`, `copy()`.
 
 `modules/programme/` (server only) and `modules/score/` (server, a graphic type, rundown
 controls) are small examples to start from.
 
 ## The bundle, seen from NodeCG
 
-The pages are NodeCG's: the Régie and « À l'antenne » are dashboard panels
-(`dashboard/`), the output is a graphic (`graphics/overlay.html`); both load `engine/` and
-`modules/`, which the bundle mounts under `/bundles/EclipseGraphics/`. They read the
-extension's **Replicants** and send it **messages**; another bundle can do the same.
+The pages are NodeCG's: the Régie, « À l'antenne » and the module panels are dashboard
+panels, « Confirmer » and « Réglages du module » dialogs (`dashboard/`), the output is a
+graphic (`graphics/overlay.html`); they all load `engine/` and `modules/`, which the
+bundle mounts under `/bundles/EclipseGraphics/`. They read the extension's
+**Replicants** and send it **messages**; another bundle can do the same. The bundle also
+has its sound cues (NodeCG's Mixer), its asset categories (the media library) and a
+logger per module in NodeCG's log.
 
 | Replicant (written by the extension only) | |
 |---|---|
@@ -357,16 +403,20 @@ extension's **Replicants** and send it **messages**; another bundle can do the s
 | `shows` · `media` · `catalog` | The projects · the media library · the installed modules and the graphic types they bring. |
 | `settings` · `status` | OBS link and Companion (the OBS password never leaves the extension) · health, connected pages, leaders, log. |
 
+Each has its JSON schema (`schemas/<name>.json`), which NodeCG checks every value against.
+
 | Message (answered `{ok, error, …}`) | |
 |---|---|
 | `cmd` | `{target, cmd, text}`: a command (above). |
+| `show:patch` | `{ops, by}`: change the active show where it changed — `[{path, value}]` or `{path, delete: true}`, a path such as `graphics.#bandeau.fields.headline` (`#` picks a list's element by its id) — whatever else changed meanwhile; answered with the show as it now is. What the pages send. |
 | `show:save` | `{rev, config}`: replace the active show (refused with the current version, `conflict`, if `rev` is stale). |
 | `shows` | `{action: create \| duplicate \| import \| rename \| delete \| activate, name, from, title, config}`. |
 | `settings:save` | `{obs, companion}`. |
 | `client` · `vars` · `flash` · `mod:status` | The pages' own: a page says hello (the leaders are chosen among them), a leader reports its module's variables or a banner, a module's panel asks its server part. |
 
 The extension sends the pages `leader`, `module` (a module's command, to its client part),
-`mod` (an event for a module's panel part) and `reload`.
+`mod` (an event for a module's panel part), `sound` (a module's sound, for the output that
+plays it) and `reload`.
 
 And over HTTP, under `/bundles/EclipseGraphics/` (JSON; NodeCG's login applies when it
 is on):
@@ -398,7 +448,7 @@ live state and settings carry over as they are (`shows/`, `data/`); for the rest
 | `http://…:8787/api/cmd/…` | `http://…:9090/bundles/EclipseGraphics/api/cmd/…`: update Companion's Generic HTTP buttons. OBS custom events are unchanged. |
 | `--port`, `--host` | `cfg/nodecg.json` (`port`, `host`). |
 | `--show`, `--shows`, `--data`, `--allow-host`, `--every`, `--watch`, `--log` | `cfg/EclipseGraphics.json` (`show`, `showsDir`, `dataDir`, `allowHosts`, `modules.a350f.*`). |
-| `media/` (uploads) | NodeCG's assets: import the files again in Réglages › Médias, or copy them into `assets/EclipseGraphics/media/`. |
+| `media/` (uploads) | NodeCG's assets: import the files again in Réglages › Médias, or copy them into `assets/EclipseGraphics/<category>/` (`images`, `videos`, `polices`, `donnees`). |
 | the A350F relay setting `http://host:8787` | `http://host:9090/bundles/EclipseGraphics`. |
 
 ### From the single-file overlays
@@ -422,11 +472,14 @@ the pages are gone (the git history has them). For an OBS set up with them:
 
 | Path | |
 |---|---|
-| `package.json` · `configschema.json` | The bundle's manifest for NodeCG (its panels, its graphic, its mounts, its asset category) · its configuration's schema. |
+| `package.json` · `configschema.json` | The bundle's manifest for NodeCG (its panels and dialogs, its graphic, its mounts, its asset categories, its sound cues) · its configuration's schema. |
 | `extension/index.js` | The extension: shows, live state, commands, OBS link, Companion, modules, Replicants, messages, HTTP routes. |
+| `schemas/` | The Replicants' JSON schemas. |
 | `graphics/overlay.html` | The output (OBS browser source). |
-| `dashboard/regie.html` · `dashboard/antenne.html` | The Régie, and its rundown alone. |
-| `engine/` | `shared.js` (time, bindings, helpers shared with the extension), `theme.js`, `motion.js`, `gfx.js` (the graphic registry), `output.js`, `graphics/` (one file per type), `panel/`, `fonts/`. |
+| `dashboard/` | `regie.html` (the Régie) · `antenne.html` (its rundown alone) · `module-<id>.html` (the module panels, written by `npm run panels`) · `dialog-demande.html` · `dialog-reglages.html` (the dialogs). |
+| `engine/` | `shared.js` (time, bindings, edits as operations, helpers shared with the extension), `theme.js`, `motion.js`, `gfx.js` (the graphic registry), `output.js`, `graphics/` (one file per type), `panel/` (the Régie, `link.js` shared by the dashboard's pages, `modpanel.js` and `reglages.js` for the module panels and their dialog, the forms), `fonts/`. |
+| `sounds/` | The sound cues' default files. |
+| `scripts/panels.js` | `npm run panels`: a dashboard panel per module. |
 | `modules/<id>/` | The modules, each with its README. |
 | `shows/` | The shows: `demo`, `emission`, `sport`, `eclipse`, `a350f`. |
 | `media/` | The examples of the media library (`logo-exemple.svg`, `exemple-breves.csv` for the demos). |
@@ -444,6 +497,8 @@ Condensed © 2017 The Barlow Project Authors, Archivo © 2020 The Archivo Projec
 Saira © 2020 The Saira Project Authors, Oswald © 2016 The Oswald Project Authors, Bebas
 Neue © 2010 Dharma Type, Inter © 2020 The Inter Project Authors, JetBrains Mono © 2020
 The JetBrains Mono Project Authors.
+
+The sounds in `sounds/` were synthesised for this bundle, and share its licence.
 
 The eclipse module loads the [Astronomy Engine](https://github.com/cosinekitty/astronomy)
 JavaScript library, MIT-licensed, © 2019–2023 Don Cross
